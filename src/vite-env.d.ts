@@ -5,3 +5,5 @@ declare global {
     CARE_API_URL: string;
   }
 }
+
+export {};
