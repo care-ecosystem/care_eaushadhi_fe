@@ -69,7 +69,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         onSuccess: (data: any) => {
             toast.success("Delivery order created successfully");
             navigate(
-                `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming/${data.id}`,
+                `/facility/${facilityId}/locations/${locationId}/eaushadhi/${data.id}`,  // ← plugin route
             );
         },
         onError: () => {
