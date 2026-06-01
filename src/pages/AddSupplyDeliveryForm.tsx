@@ -1,3 +1,12 @@
+/**
+ * Reference Source:
+ * care_fe/src/pages/Facility/services/inventory/externalSupply/deliveryOrder/AddSupplyDeliveryForm.tsx
+ *
+ * Notes:
+ * - Copied and adapted for CARE eAushadhi FE
+ * - Modified for custom delivery flow + UI changes
+ */
+
 import { useState } from "react";
 import { PlusCircle, Trash2 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";

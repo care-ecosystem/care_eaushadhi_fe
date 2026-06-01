@@ -1,3 +1,11 @@
+/**
+ * Reference Source:
+ * care_fe/src/pages/Facility/services/inventory/externalSupply/deliveryOrder/DeliveryOrderShow.tsx
+ *
+ * Notes:
+ * - Adapted from CARE FE external supply delivery order module
+ */
+
 import { useState } from "react";
 import { ChevronLeft, EllipsisVertical, MoreVertical, Printer } from "lucide-react";
 import { navigate } from "raviger";
