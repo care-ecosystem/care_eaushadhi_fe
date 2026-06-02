@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
     Select,
@@ -103,8 +102,8 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
 
     if (isFetching) {
         return (
-            <div className="w-full px-6 py-6 max-w-5xl mx-auto">
-                <div className="border border-gray-200 rounded-lg bg-white p-6 space-y-4 animate-pulse">
+            <div className="container mx-auto max-w-5xl px-4 py-6">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4 animate-pulse">
                     <div className="h-4 bg-gray-200 rounded w-1/3" />
                     <div className="h-9 bg-gray-200 rounded" />
                     <div className="h-4 bg-gray-200 rounded w-1/4" />
@@ -117,43 +116,50 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
     }
 
     return (
-        <div className="w-full px-6 py-6 space-y-4 max-w-5xl mx-auto">
-            <div className="relative border border-gray-200 rounded-lg bg-white p-6 space-y-6">
-                <button
-                    onClick={() => navigate(returnPath)}
-                    className="absolute top-4 right-4 p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                >
-                    <X className="size-4" />
-                </button>
+        <div className="container mx-auto max-w-5xl px-4 py-6">
 
-                <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Edit Delivery Order</h1>
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                    Edit Delivery
                     {existingOrder?.status && (
-                        <span className="inline-block mt-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">
+                        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 capitalize">
                             {existingOrder.status}
                         </span>
                     )}
-                </div>
+                </h1>
+                <button
+                    onClick={() => navigate(returnPath)}
+                    className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                >
+                    <X className="size-5" />
+                    <span className="sr-only">Close</span>
+                </button>
+            </div>
 
+            {/* Card */}
+            <div className="rounded-lg border border-gray-200 bg-white p-6 space-y-6 mb-6">
+
+                {/* Name + Vendor/Distributor */}
                 <div className="grid grid-cols-2 gap-6 items-start">
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-sm font-medium text-gray-700">
-                            Name <span className="text-red-500">*</span>
-                        </Label>
+                        <label className="text-sm font-medium text-gray-900">
+                            Name
+                        </label>
                         <Input
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="Enter order name"
-                            className="bg-white"
+                            className="h-9 bg-white"
                         />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label className="text-sm font-medium text-gray-700">
-                            Supplier <span className="text-red-500">*</span>
-                        </Label>
+                        <label className="text-sm font-medium text-gray-900">
+                            Vendor/Distributor
+                        </label>
                         <Select value={supplier} onValueChange={setSupplier}>
-                            <SelectTrigger className="bg-white">
+                            <SelectTrigger className="h-9 bg-white">
                                 <SelectValue placeholder="Select Vendor/Distributor" />
                             </SelectTrigger>
                             <SelectContent>
@@ -167,10 +173,12 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
                     </div>
                 </div>
 
+                {/* Note */}
                 <div className="flex flex-col gap-1.5">
-                    <Label className="text-sm font-medium text-gray-700">
-                        Note <span className="text-gray-400 font-normal italic">(Optional)</span>
-                    </Label>
+                    <label className="text-sm font-medium text-gray-900">
+                        Note{" "}
+                        <span className="text-gray-500 text-sm font-normal italic">(Optional)</span>
+                    </label>
                     <Textarea
                         placeholder="Add any notes about this order..."
                         value={note}
@@ -181,16 +189,36 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
                 </div>
             </div>
 
-            <div className="flex justify-end gap-3">
+            {/* Footer buttons */}
+            <div className="flex justify-end space-x-3">
                 <Button variant="outline" onClick={() => navigate(returnPath)}>
                     Cancel
+                    <span className="ml-1.5 text-xs bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-mono">
+                        ESC
+                    </span>
                 </Button>
                 <Button
-                    onClick={() => updateDeliveryOrder()}
-                    disabled={isPending || !name || !supplier}
-                    className="bg-green-700 hover:bg-green-800 text-white"
+                    disabled={isPending}
+                    style={{ backgroundColor: '#15803d', color: 'white', opacity: 1 }}
+                    onClick={() => {
+                        if (!name) {
+                            toast.error("Please enter a name");
+                            return;
+                        }
+                        if (!supplier) {
+                            toast.error("Please select a vendor/distributor");
+                            return;
+                        }
+                        updateDeliveryOrder();
+                    }}
                 >
                     {isPending ? "Saving..." : "Save"}
+                    <span
+                        className="ml-1.5 text-xs rounded px-1.5 py-0.5 font-mono"
+                        style={{ backgroundColor: '#166534', border: '1px solid #15803d', color: 'white' }}
+                    >
+                        ENTER
+                    </span>
                 </Button>
             </div>
         </div>
