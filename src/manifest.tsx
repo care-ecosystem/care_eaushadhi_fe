@@ -1,12 +1,13 @@
 import { lazy } from "react";
 import EAusdhadhiFetchPage from "./pages/EAusdhadhiFetchPage.tsx";
 import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
+import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 
 const manifest = {
   plugin: "care_eaushadhi",
   extends: [],
   components: {
-    DeliveryOrderListActions: lazy(
+    DeliveryOrderActions: lazy(
       () => import("./components/pluggables/eAusdhadhiTriggerButton"),
     ),
   },
@@ -24,6 +25,22 @@ const manifest = {
       />
     ),
 
+    "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit": ({
+      facilityId,
+      locationId,
+      deliveryOrderId,
+    }: {
+      facilityId: string;
+      locationId: string;
+      deliveryOrderId: string;
+    }) => (
+      <DeliveryOrderForm
+        facilityId={facilityId}
+        locationId={locationId}
+        deliveryOrderId={deliveryOrderId}
+      />
+    ),
+
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId": ({
       facilityId,
       locationId,
@@ -36,8 +53,7 @@ const manifest = {
       <DeliveryOrderShow
         facilityId={facilityId}
         locationId={locationId}
-        deliveryOrderId={deliveryOrderId}
-      />
+        deliveryOrderId={deliveryOrderId} internal={false}      />
     ),
   },
 

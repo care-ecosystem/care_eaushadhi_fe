@@ -22,6 +22,7 @@ interface Props {
     facilityId: string;
     locationId: string;
     deliveryOrderId: string;
+    internal: boolean;
 }
 
 interface Organization { id: string; name: string; }
