@@ -1,3 +1,3 @@
-import "@/style/index.css";
+import "./index.css";
 
 export { default as manifest } from "@/manifest";
