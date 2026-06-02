@@ -7,7 +7,7 @@ const manifest = {
   plugin: "care_eaushadhi",
   extends: [],
   components: {
-    DeliveryOrderListActions: lazy(
+    DeliveryOrderActions: lazy(
       () => import("./components/pluggables/eAusdhadhiTriggerButton"),
     ),
   },
