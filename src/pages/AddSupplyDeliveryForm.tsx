@@ -8,8 +8,8 @@
  */
 
 import { useState } from "react";
-import { PlusCircle, Trash2 } from "lucide-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { PlusCircle, Trash2, ChevronDown } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +24,16 @@ interface Props {
 }
 
 interface ProductKnowledge {
+    category?: { title: string; slug: string };
     id: string;
     slug: string;
     name: string;
     base_unit?: { display: string };
+}
+
+interface ResourceCategory {
+    slug: string;
+    title: string;
 }
 
 interface Item {
@@ -39,7 +45,8 @@ interface Item {
     pack_size: string;
     pack_qty: string;
     unit_price: string;
-    category: string;
+    category_slug: string;
+    category_title: string;
 }
 
 const EMPTY_ITEM: Item = {
@@ -51,28 +58,44 @@ const EMPTY_ITEM: Item = {
     pack_size: "1",
     pack_qty: "1",
     unit_price: "",
-    category: "",
+    category_slug: "",
+    category_title: "",
 };
 
 export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, destination, onSuccess }: Props) {
     const [items, setItems] = useState<Item[]>([]);
-    const [productSearch, setProductSearch] = useState("");
+    const [productSearches, setProductSearches] = useState<Record<number, string>>({});
     const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [categoryOpenRow, setCategoryOpenRow] = useState<number | null>(null);
+    const [categorySearch, setCategorySearch] = useState("");
 
     // Search products
+    const activeSearch = activeRowIndex !== null ? (productSearches[activeRowIndex] || "") : "";
+
     const { data: productsData } = useQuery({
-        queryKey: ["productKnowledge", productSearch],
+        queryKey: ["productKnowledge", facilityId, items[activeRowIndex ?? 0]?.category_slug],
         queryFn: () =>
             request<{ results: ProductKnowledge[] }>(
-                `/api/v1/facility/${facilityId}/product_knowledge/`,
+                `/api/v1/product_knowledge/`,
                 HttpMethod.GET,
-                { name: productSearch || undefined, limit: 10 },
+                { limit: 100, facility: facilityId, status: "active", include_instance: true, category: items[activeRowIndex ?? 0]?.category_slug || undefined },
             ),
-        enabled: productSearch.length > 0,
+        enabled: true,
     });
-
     const products = productsData?.results ?? [];
+
+    const { data: categoriesData } = useQuery({
+        queryKey: ["resourceCategories", facilityId, categorySearch],
+        queryFn: () =>
+            request<{ results: ResourceCategory[] }>(
+                `/api/v1/facility/${facilityId}/resource_category/`,
+                HttpMethod.GET,
+                { resource_type: "charge_item_definition", name: categorySearch || undefined, limit: 100 },
+            ),
+        enabled: true,
+    });
+    const categories = categoriesData?.results ?? [];
 
     const { mutateAsync: createProduct } = useMutation({
         mutationFn: (data: Record<string, unknown>) =>
@@ -108,8 +131,10 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
     }
 
     function addRow() {
-        setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
-        setActiveRowIndex(items.length);
+        setItems((prev) => {
+            setActiveRowIndex(prev.length);
+            return [...prev, { ...EMPTY_ITEM }];
+        });
     }
 
     function removeRow(index: number) {
@@ -122,7 +147,7 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
             if (!item.product_knowledge_slug) { toast.error(`Select a product at row ${i + 1}`); return; }
             if (!item.batch_number) { toast.error(`Batch number required at row ${i + 1}`); return; }
             if (!item.expiry_date) { toast.error(`Expiry date required at row ${i + 1}`); return; }
-            if (!item.category) { toast.error(`Category required at row ${i + 1}`); return; }
+            if (!item.category_slug) { toast.error(`Category required at row ${i + 1}`); return; }
             if (!item.unit_price) { toast.error(`Unit price required at row ${i + 1}`); return; }
         }
 
@@ -134,7 +159,7 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
                 // 1. Create charge item definition
                 const chargeItem = await createChargeItem({
                     slug_value: crypto.randomUUID(),
-                    category: item.category,
+                    category: item.category_slug,
                     title: `${item.product_knowledge_name} - ${item.batch_number}`,
                     status: "active",
                     can_edit_charge_item: false,
@@ -218,37 +243,40 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
                         {items.map((item, index) => (
                             <tr key={index} className="align-top">
                                 {/* Product search */}
-                                <td className="px-2 py-2 relative">
-                                    <Input
-                                        placeholder="Search product..."
-                                        value={item.product_knowledge_name || productSearch}
+                                <td className="px-2 py-2">
+                                    <select
+                                        value={item.product_knowledge_slug}
                                         onChange={(e) => {
-                                            setProductSearch(e.target.value);
-                                            setActiveRowIndex(index);
-                                            updateItem(index, "product_knowledge_name", e.target.value);
-                                            updateItem(index, "product_knowledge_slug", "");
+                                            const selected = products.find(
+                                                (p) => p.slug === e.target.value
+                                            );
+
+                                            if (selected) {
+                                                updateItem(index, "product_knowledge_slug", selected.slug);
+                                                updateItem(index, "product_knowledge_name", selected.name);
+
+                                                const matchedCat = categories.find(
+                                                    (c) =>
+                                                        c.title.toLowerCase() ===
+                                                        selected.category?.title?.toLowerCase()
+                                                );
+
+                                                if (matchedCat) {
+                                                    updateItem(index, "category_slug", matchedCat.slug);
+                                                    updateItem(index, "category_title", matchedCat.title);
+                                                }
+                                            }
                                         }}
-                                        className="h-8 text-xs"
-                                    />
-                                    {/* Dropdown */}
-                                    {activeRowIndex === index && products.length > 0 && !item.product_knowledge_slug && (
-                                        <div className="absolute top-full left-2 z-10 w-64 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                                            {products.map((p) => (
-                                                <button
-                                                    key={p.slug}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                                                    onClick={() => {
-                                                        updateItem(index, "product_knowledge_slug", p.slug);
-                                                        updateItem(index, "product_knowledge_name", p.name);
-                                                        setProductSearch("");
-                                                        setActiveRowIndex(null);
-                                                    }}
-                                                >
-                                                    {p.name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                        className="h-8 text-xs w-full border border-gray-200 rounded-md px-2 bg-white"
+                                    >
+                                        <option value="">Select product...</option>
+
+                                        {products.map((p) => (
+                                            <option key={p.slug} value={p.slug}>
+                                                {p.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </td>
                                 <td className="px-2 py-2">
                                     <Input
@@ -266,13 +294,34 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
                                         className="h-8 text-xs"
                                     />
                                 </td>
-                                <td className="px-2 py-2">
-                                    <Input
-                                        placeholder="Category"
-                                        value={item.category}
-                                        onChange={(e) => updateItem(index, "category", e.target.value)}
-                                        className="h-8 text-xs"
-                                    />
+                                <td className="px-2 py-2 relative">
+                                    <div
+                                        className="flex items-center border border-gray-200 rounded-md h-8 px-2 bg-white transition-colors cursor-pointer hover:border-gray-400"
+                                        onClick={() => { setCategoryOpenRow(index); setCategorySearch(""); }}
+                                    >
+                                        <span className={`flex-1 text-xs truncate ${!item.category_title ? "text-gray-400" : "text-gray-900"}`}>
+                                            {item.category_title || "Select category..."}
+                                        </span>
+                                        <ChevronDown className="size-3 text-gray-400 shrink-0 ml-1" />
+                                    </div>
+                                    {categoryOpenRow === index && (
+                                        <div className="absolute top-full left-2 z-20 w-64 bg-white border border-gray-200 rounded-md shadow-lg">
+                                            <div className="p-2 border-b border-gray-100">
+                                                <Input autoFocus placeholder="Search category..." value={categorySearch} onChange={(e) => setCategorySearch(e.target.value)} className="h-7 text-xs" />
+                                            </div>
+                                            <div className="max-h-48 overflow-y-auto">
+                                                {categories.length === 0 ? (
+                                                    <p className="px-3 py-4 text-xs text-gray-400 text-center">No categories found</p>
+                                                ) : (
+                                                    categories.map((c) => (
+                                                        <button key={c.slug} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50" onClick={() => { updateItem(index, "category_slug", c.slug); updateItem(index, "category_title", c.title); setCategoryOpenRow(null); }}>
+                                                            {c.title}
+                                                        </button>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="px-2 py-2">
                                     <Input
@@ -325,6 +374,9 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
                 </table>
             </div>
 
+            {categoryOpenRow !== null && (
+                <div className="fixed inset-0 z-10" onClick={() => setCategoryOpenRow(null)} />
+            )}
             <div className="flex items-center justify-between">
                 <Button variant="outline" onClick={addRow} className="flex items-center gap-2">
                     <PlusCircle className="size-4" />
