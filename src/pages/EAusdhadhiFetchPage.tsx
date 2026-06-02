@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState,useEffect } from "react";
 import { X } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import { HttpMethod } from "@/apis/types";
 interface Props {
     facilityId: string;
     locationId: string;
+    deliveryOrderId?: string;
 }
 
 interface Organization {
