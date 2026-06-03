@@ -22,13 +22,20 @@ interface Props {
     deliveryOrderId?: string;
 }
 
-interface Organization {
+interface SupplierMapping {
     id: string;
-    name: string;
+    supplier_id: string;
+    eaushadhi_warehouse_name: string;
+    is_default: boolean;
 }
 
-// Returns today's date formatted as DD/MM/YYYY (required by initiate-inward-fetch API)
-// Returns today's date formatted as MM/DD/YYYY (for display)
+interface InstituteMappingResult {
+    id: string;
+    facility_id: string;
+    supplier_mappings: SupplierMapping[];
+}
+
+
 function getTodayFormatted() {
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
@@ -37,7 +44,7 @@ function getTodayFormatted() {
     return `${mm}/${dd}/${yyyy}`;
 }
 
-// Returns today's date formatted as DD/MM/YYYY (required by initiate-inward-fetch API)
+
 function getTodayForAPI() {
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
@@ -55,17 +62,19 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
 
     const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
-    const { data: suppliersData } = useQuery({
-        queryKey: ["organizations", "product_supplier"],
+    
+    const { data: instituteMappingData } = useQuery({
+        queryKey: ["eaushadhi-institute-mappings", facilityId],
         queryFn: () =>
-            request<{ results: Organization[] }>(
-                "/api/v1/organization/",
+            request<{ results: InstituteMappingResult[] }>(
+                `/api/care_eaushadhi/institute-mappings/`,
                 HttpMethod.GET,
-                { org_type: "product_supplier" },
+                { facility_id: facilityId },
             ),
     });
 
-    const supplierOptions = suppliersData?.results ?? [];
+    const supplierOptions =
+        instituteMappingData?.results?.flatMap((r) => r.supplier_mappings) ?? [];
 
     const { mutate: createDeliveryOrder, isPending } = useMutation({
         mutationFn: async () => {
@@ -153,9 +162,10 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                                 <SelectValue placeholder="Select Vendor/Distributor" />
                             </SelectTrigger>
                             <SelectContent>
+                                
                                 {supplierOptions.map((s) => (
-                                    <SelectItem key={s.id} value={s.id}>
-                                        {s.name}
+                                    <SelectItem key={s.id} value={s.supplier_id}>
+                                        {s.eaushadhi_warehouse_name}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
