@@ -1,4 +1,4 @@
-import { useState,useEffect } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -27,10 +27,20 @@ interface Organization {
     name: string;
 }
 
+// Returns today's date formatted as MM/DD/YYYY
+function getTodayFormatted() {
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const yyyy = today.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+}
+
 export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
     const [name, setName] = useState("fetching stock from eAushadhi");
     const [supplier, setSupplier] = useState("");
     const [note, setNote] = useState("");
+    const [inwardDate] = useState(getTodayFormatted());
 
     const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
@@ -56,6 +66,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                     supplier,
                     destination: locationId,
                     note,
+                    inward_date: inwardDate,
                     status: "draft",
                     extensions: {},
                 },
@@ -127,6 +138,22 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                     </div>
                 </div>
 
+                {/* Inward Date */}
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-gray-900">
+                        Inward Date{" "}
+                        <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                        className="h-9 bg-white text-gray-500"
+                        value={inwardDate}
+                        readOnly
+                    />
+                    <p className="text-xs text-gray-500">
+                        Defaults to today. Backdating is restricted by facility policy.
+                    </p>
+                </div>
+
                 {/* Note */}
                 <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium text-gray-900">
@@ -140,27 +167,6 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                         onChange={(e) => setNote(e.target.value)}
                         className="bg-white"
                     />
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-gray-900">Tags</label>
-                    <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 min-h-[36px] text-sm text-gray-400 cursor-default">
-                        <svg
-                            className="size-4 shrink-0"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        >
-                            <path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l7.29-7.29a1 1 0 0 0 0-1.41z" />
-                            <circle cx="7" cy="7" r="1" />
-                        </svg>
-                        Add Tags
-                    </div>
                 </div>
 
             </div>
