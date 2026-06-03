@@ -27,7 +27,8 @@ interface Organization {
     name: string;
 }
 
-// Returns today's date formatted as MM/DD/YYYY
+// Returns today's date formatted as DD/MM/YYYY (required by initiate-inward-fetch API)
+// Returns today's date formatted as MM/DD/YYYY (for display)
 function getTodayFormatted() {
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
@@ -35,6 +36,16 @@ function getTodayFormatted() {
     const yyyy = today.getFullYear();
     return `${mm}/${dd}/${yyyy}`;
 }
+
+// Returns today's date formatted as DD/MM/YYYY (required by initiate-inward-fetch API)
+function getTodayForAPI() {
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const yyyy = today.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+}
+
 
 export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
     const [name, setName] = useState("fetching stock from eAushadhi");
@@ -57,8 +68,8 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
     const supplierOptions = suppliersData?.results ?? [];
 
     const { mutate: createDeliveryOrder, isPending } = useMutation({
-        mutationFn: () =>
-            request(
+        mutationFn: async () => {
+            const deliveryData: any = await request(
                 `/api/v1/facility/${facilityId}/order/delivery/`,
                 HttpMethod.POST,
                 {
@@ -70,7 +81,21 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                     status: "draft",
                     extensions: {},
                 },
-            ),
+            );
+
+            await request(
+                `/api/care_eaushadhi/initiate-inward-fetch/`,
+                HttpMethod.POST,
+                {
+                    facility_id: facilityId,
+                    inward_date: getTodayForAPI(),
+                    triggered_by: "USER",
+                    force_refresh: false,
+                },
+            );
+
+            return deliveryData;
+        },
         onSuccess: (data: any) => {
             toast.success("Delivery order created successfully");
             navigate(
