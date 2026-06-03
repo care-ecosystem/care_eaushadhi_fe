@@ -259,16 +259,17 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                 <div className="flex items-center gap-4">
                     <button
                         onClick={() => navigate(returnPath)}
-                        className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
+                        className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
                     >
                         <ChevronLeft className="size-4" />
                     </button>
                     <div>
                         <h1 className="text-xl font-semibold text-gray-900">{deliveryOrder.name}</h1>
                         <p className="text-sm text-gray-500">
-                            From <span className="font-medium">{deliveryOrder.supplier?.name ?? deliveryOrder.origin?.name ?? "—"}</span>
-                            {" → "}
-                            To <span className="font-medium">{deliveryOrder.destination.name}</span>
+                            This request is to dispatch items from{" "}
+                            <span className="font-medium">{deliveryOrder.supplier?.name ?? deliveryOrder.origin?.name ?? "—"}</span>
+                            {" to "}
+                            <span className="font-medium">{deliveryOrder.destination.name}</span>.
                         </p>
                     </div>
                 </div>
@@ -294,6 +295,7 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                         <Button
                             onClick={() => updateStatus("pending")}
                             disabled={isUpdating || supplyDeliveries.length === 0}
+                            className="!bg-green-700 hover:!bg-green-800 !text-white !opacity-100"
                         >
                             {isUpdating ? "Updating..." : "Mark as Approved"}
                         </Button>
@@ -361,8 +363,8 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                     )}
                     <div>
                         <p className="text-sm font-medium text-gray-500">Status</p>
-                        <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-sm ${STATUS_COLORS[deliveryOrder.status]}`}>
-                            {deliveryOrder.status}
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}>
+                            {deliveryOrder.status.charAt(0).toUpperCase() + deliveryOrder.status.slice(1)}
                         </span>
                     </div>
                     {deliveryOrder.note && (
@@ -380,18 +382,20 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                             {new Date(deliveryOrder.created_date).toLocaleString()}
                         </p>
                     </div>
-                    {deliveryOrder.tags?.length > 0 && (
-                        <div>
-                            <p className="text-sm font-medium text-gray-500">Tags</p>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                                {deliveryOrder.tags.map(tag => (
+                    <div>
+                        <p className="text-sm font-medium text-gray-500">Tags</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                            {deliveryOrder.tags?.length > 0 ? (
+                                deliveryOrder.tags.map(tag => (
                                     <span key={tag.id} className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
                                         {tag.display}
                                     </span>
-                                ))}
-                            </div>
+                                ))
+                            ) : (
+                                <span className="text-sm text-gray-400"># Add Tags</span>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
@@ -529,11 +533,10 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                                                         {d.supplied_item_condition}
                                                     </td>
                                                     <td className="px-3 py-2">
-                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${
-                                                            d.status === "completed" ? "bg-green-100 text-green-700"
+                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${d.status === "completed" ? "bg-green-100 text-green-700"
                                                             : d.status === "abandoned" ? "bg-red-100 text-red-700"
-                                                            : "bg-yellow-100 text-yellow-700"
-                                                        }`}>
+                                                                : "bg-yellow-100 text-yellow-700"
+                                                            }`}>
                                                             {d.status}
                                                         </span>
                                                     </td>
@@ -578,11 +581,10 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                                 {(["completed", "abandoned"] as const).map(s => (
                                     <label
                                         key={s}
-                                        className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
-                                            confirmDialog.status === s
-                                                ? "border-primary-600 bg-primary-50"
-                                                : "border-gray-300 bg-white hover:border-gray-400"
-                                        }`}
+                                        className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${confirmDialog.status === s
+                                            ? "border-primary-600 bg-primary-50"
+                                            : "border-gray-300 bg-white hover:border-gray-400"
+                                            }`}
                                     >
                                         <input
                                             type="radio"
@@ -602,11 +604,10 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                                         {(["normal", "damaged"] as const).map(c => (
                                             <label
                                                 key={c}
-                                                className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
-                                                    confirmDialog.condition === c
-                                                        ? "border-primary-600 bg-primary-50"
-                                                        : "border-gray-300 bg-white hover:border-gray-400"
-                                                }`}
+                                                className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${confirmDialog.condition === c
+                                                    ? "border-primary-600 bg-primary-50"
+                                                    : "border-gray-300 bg-white hover:border-gray-400"
+                                                    }`}
                                             >
                                                 <input
                                                     type="radio"
