@@ -3,6 +3,9 @@ import EAusdhadhiFetchPage from "./pages/EAusdhadhiFetchPage.tsx";
 import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
 import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
+import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
+import React from "react";
+import { Settings } from "lucide-react";
 
 const manifest = {
   plugin: "care_eaushadhi",
@@ -72,10 +75,18 @@ const manifest = {
         deliveryOrderId={deliveryOrderId}
       />
     ),
+    "/admin/eaushadhi/institute-mappings": () => <InstituteMappingAdmin />,
   },
+  
 
   navItems: [],
-  adminNavItems: [],
+  adminNavItems: [
+    {
+        name: "eAushadhi Mappings",
+        url: "/admin/eaushadhi/institute-mappings",
+        icon: React.createElement(Settings, { className: "size-4" }),
+    },
+],
 };
 
 export default manifest;
