@@ -3,6 +3,8 @@ import EAusdhadhiFetchPage from "./pages/EAusdhadhiFetchPage.tsx";
 import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
 import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
+import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
+import React from "react";
 import { TruckIcon } from "lucide-react";
 
 // Wrapper component for pages
@@ -30,9 +32,7 @@ const manifest = {
   routes: {
     "/admin/eaushadhi/institute-mappings": () => (
       <PageWrapper>
-        <div> {/* // to be replaced with actual page*/}
-          to be added with institute mappings page
-        </div>
+       <InstituteMappingAdmin />
       </PageWrapper>
     ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch": ({
