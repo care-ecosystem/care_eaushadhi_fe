@@ -475,60 +475,6 @@ export default function InstituteMappingAdmin() {
                                         </div>
                                     ))}
 
-                                    {/* New rows */}
-                                    {/* {newSupplierRows.map((s, idx) => (
-                                        <div key={s.tempId} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                                            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
-                                                <SupplierSelect
-                                                    options={suppliers.map(sup => ({ id: sup.id, name: sup.name }))}
-                                                    value={s.supplier_id}
-                                                    onChange={(id, name) => {
-                                                        setNewSupplierRows(rows => rows.map((r, i) =>
-                                                            i === idx ? {
-                                                                ...r,
-                                                                supplier_id: id,
-                                                                supplier_name: name,
-                                                                eaushadhi_warehouse_name: r.eaushadhi_warehouse_name || name,
-                                                            } : r
-                                                        ));
-                                                    }}
-                                                    placeholder="Select supplier..."
-                                                />
-                                                <Input
-                                                    value={s.eaushadhi_warehouse_name}
-                                                    onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
-                                                        i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
-                                                    ))}
-                                                    placeholder="e.g. Mysuru WH"
-                                                    className="h-9 text-xs"
-                                                />
-                                                <RadioButton
-                                                    checked={s.is_default}
-                                                    onClick={() => setNewSupplierRows(rows =>
-                                                        rows.map((r, i) => ({ ...r, is_default: i === idx }))
-                                                    )}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setNewSupplierRows(rows => rows.filter((_, i) => i !== idx))}
-                                                    className="text-gray-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <Trash2 className="size-4" />
-                                                </button>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    className="size-3"
-                                                    checked={s.eaushadhi_warehouse_name === s.supplier_name}
-                                                    onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
-                                                        i === idx ? { ...r, eaushadhi_warehouse_name: e.target.checked ? r.supplier_name : "" } : r
-                                                    ))}
-                                                />
-                                                <span className="text-xs text-gray-500">Same as supplier name</span>
-                                            </div>
-                                        </div>
-                                    ))} */}
                                     {newSupplierRows.map((s, idx) => (
                                         <div key={s.tempId} className="border border-gray-200 rounded-lg p-3 space-y-2">
                                             {/* Column headers inside card */}
