@@ -53,7 +53,7 @@ const manifest = {
       <DeliveryOrderShow
         facilityId={facilityId}
         locationId={locationId}
-        deliveryOrderId={deliveryOrderId} internal={false}      />
+        deliveryOrderId={deliveryOrderId} internal={false} />
     ),
   },
 

@@ -128,6 +128,17 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
     const supplyDeliveries = supplyDeliveriesData?.results ?? [];
     const isRequester = locationId === deliveryOrder?.destination.id;
 
+    const { data: instituteMappingData } = useQuery({
+        queryKey: ["eaushadhi-institute-mappings", facilityId],
+        queryFn: () =>
+            request<{ results: { manual_addition: boolean }[] }>(
+                `/api/care_eaushadhi/institute-mappings/`,
+                HttpMethod.GET,
+                { facility_id: facilityId },
+            ),
+    });
+    const manualAddition = instituteMappingData?.results?.[0]?.manual_addition ?? false;
+
     // Update delivery order status
     const { mutate: updateStatus, isPending: isUpdating } = useMutation({
         mutationFn: (status: string) =>
@@ -548,7 +559,7 @@ export default function DeliveryOrderShow({ facilityId, locationId, deliveryOrde
                             )}
 
                             {/* Add items form — draft only */}
-                            {deliveryOrder.status === "draft" && (
+                            {deliveryOrder.status === "draft" && manualAddition && (
                                 <AddSupplyDeliveryForm
                                     facilityId={facilityId}
                                     deliveryOrderId={deliveryOrderId}

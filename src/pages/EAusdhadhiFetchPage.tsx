@@ -32,6 +32,8 @@ interface SupplierMapping {
 interface InstituteMappingResult {
     id: string;
     facility_id: string;
+    disable_inward_date: boolean;
+    manual_addition: boolean;
     supplier_mappings: SupplierMapping[];
 }
 
@@ -62,7 +64,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
 
     const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
-    
+
     const { data: instituteMappingData } = useQuery({
         queryKey: ["eaushadhi-institute-mappings", facilityId],
         queryFn: () =>
@@ -75,6 +77,10 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
 
     const supplierOptions =
         instituteMappingData?.results?.flatMap((r) => r.supplier_mappings) ?? [];
+    console.log("Supplier Options:", supplierOptions);
+
+    const disableInwardDate = instituteMappingData?.results?.[0]?.disable_inward_date ?? false;
+    const manualAddition = instituteMappingData?.results?.[0]?.manual_addition ?? false;
 
     const { mutate: createDeliveryOrder, isPending } = useMutation({
         mutationFn: async () => {
@@ -157,12 +163,14 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                         <label className="text-sm font-medium text-gray-900">
                             Vendor/Distributor
                         </label>
+
+                        
                         <Select value={supplier} onValueChange={setSupplier}>
                             <SelectTrigger className="h-9 bg-white">
                                 <SelectValue placeholder="Select Vendor/Distributor" />
                             </SelectTrigger>
                             <SelectContent>
-                                
+
                                 {supplierOptions.map((s) => (
                                     <SelectItem key={s.id} value={s.supplier_id}>
                                         {s.eaushadhi_warehouse_name}
@@ -180,9 +188,9 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                         <span className="text-red-500">*</span>
                     </label>
                     <Input
-                        className="h-9 bg-white text-gray-500"
+                        className={`h-9 bg-white text-gray-500 ${disableInwardDate ? "cursor-not-allowed opacity-60" : ""}`}
                         value={inwardDate}
-                        readOnly
+                        readOnly={disableInwardDate}
                     />
                     <p className="text-xs text-gray-500">
                         Defaults to today. Backdating is restricted by facility policy.
