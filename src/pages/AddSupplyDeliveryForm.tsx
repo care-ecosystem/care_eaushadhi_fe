@@ -1,78 +1,42 @@
 /**
- * Reference Source:
- * care_fe AddSupplyDeliveryForm + SmartExternalDeliveryRow + MonetaryComponentSelector + ResourceCategoryPicker
- * Self-contained replica for care_eaushadhi_fe plugin.
- *
- * MODIFICATIONS:
- * - Added inwardRecordId prop for API prefill
- * - Added useEffect to fetch inward record data and auto-populate rows
- * - Maps inward items to delivery rows with batch, expiry, quantity
- * - Handles product knowledge lookup and category selection
- * - Added quantity_in_units field for E-Aushadhi display
- * - Updated column widths for consistency
- * - INTEGRATED PRODUCT MAPPINGS API
- * - Added dropdown selector for product mappings with eAushadhi drug name display
- * - Fetches mappings from /api/care_eaushadhi/product-mappings/ endpoint on page load
+ * Supply Delivery Form with E-Aushadhi Integration
+ * - Auto-populates from inward records
+ * - Product mapping selection with eAushadhi display
+ * - Dynamic quantity calculations (pack size × quantity)
  */
 import { useState, useEffect, useCallback } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Check,
-  FolderOpen,
-  Home,
-  PlusCircle,
-  Search,
-  Trash2,
-  X,
-  AlertCircle,
-} from "lucide-react";
+import { Check, PlusCircle, Trash2, AlertCircle } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
-
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
   id: string;
   slug: string;
   name: string;
-  base_unit?: { code: string; display: string };
-  category?: { id: string; slug: string; title: string };
 }
-
 interface ProductMapping {
   id: string;
-  eaushadhi_drug_id: string;
   eaushadhi_drug_name: string;
   product_knowledge: ProductKnowledge;
 }
-
-interface ChargeItemDefinition {
-  id: string;
-  slug: string;
-  title: string;
-  category?: { id: string; slug: string; title: string };
-}
-
 interface Product {
   id: string;
-  status: string;
   batch?: { lot_number: string };
   expiration_date?: string;
   standard_pack_size?: number;
-  charge_item_definition?: ChargeItemDefinition;
+  charge_item_definition?: { slug: string };
 }
-
-interface ResourceCategory {
-  id: string;
-  slug: string;
-  title: string;
-  has_children?: boolean;
-}
-
 interface RowItem {
   product_knowledge_id: string;
   product_knowledge_slug: string;
@@ -91,23 +55,17 @@ interface RowItem {
   eaushadhi_drug_name?: string;
   product_mapping_id?: string;
 }
-
 interface InwardItem {
-  id: string;
   drug_name: string;
   batch_no: string;
   expiry_date: string;
   quantity_received_current: string;
   unit_pack: string;
   quantity_in_units?: string;
-  eaushadhi_drug_id?: string;
 }
-
 interface InwardRecord {
-  id: string;
   items: InwardItem[];
 }
-
 const EMPTY_ROW = (): RowItem => ({
   product_knowledge_id: "",
   product_knowledge_slug: "",
@@ -126,159 +84,41 @@ const EMPTY_ROW = (): RowItem => ({
   eaushadhi_drug_name: "",
   product_mapping_id: "",
 });
-
 // ─── Product Mapping Selector ──────────────────────────────────────────────
-interface ProductMappingSelectorProps {
-  value: string;
-  label: string;
-  eaushadhiDrugName?: string;
-  mappings: ProductMapping[];
-  isLoadingMappings: boolean;
-  onSelect: (mapping: ProductMapping) => void;
-}
-
 function ProductMappingSelector({
   value,
-  label,
-  eaushadhiDrugName,
   mappings,
   isLoadingMappings,
   onSelect,
-}: ProductMappingSelectorProps) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-
-  const filteredMappings = search
-    ? mappings.filter((m) =>
-        m.eaushadhi_drug_name.toLowerCase().includes(search.toLowerCase()),
-      )
-    : mappings;
-
-  const handleSelect = (mapping: ProductMapping) => {
-    onSelect(mapping);
-    setOpen(false);
-    setSearch("");
-  };
-
-  return (
-    <div className="relative w-full">
-      <button
-        type="button"
-        className="flex items-center border border-gray-300 rounded-md h-9 px-3 cursor-pointer hover:border-gray-400 bg-white transition-colors w-full shadow-xs"
-        onClick={() => setOpen(true)}
-      >
-        <span
-          className={[
-            "flex-1 text-xs truncate text-left",
-            !label ? "text-gray-500" : "text-gray-900",
-          ].join(" ")}
-        >
-          {label || "Select product mapping"}
-        </span>
-        <ChevronDown
-          className={[
-            "size-4 shrink-0 opacity-50 transition-transform duration-200",
-            open ? "rotate-180" : "",
-          ].join(" ")}
-        />
-      </button>
-
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-100"
-            onClick={() => {
-              setOpen(false);
-              setSearch("");
-            }}
-          />
-          <div
-            className="absolute top-full left-0 z-20 bg-white border border-gray-200 rounded-md shadow-lg mt-1 flex flex-col"
-            style={{ maxHeight: "40vh", minWidth: "400px" }}
-          >
-            <div className="px-3 border-b shrink-0">
-              <div className="flex items-center gap-2 h-9">
-                <Search className="size-4 text-gray-400 shrink-0" />
-                <input
-                  autoFocus
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by eAushadhi drug name"
-                  className="flex-1 text-sm border-0 outline-none bg-transparent"
-                />
-              </div>
-            </div>
-
-            <div className="overflow-y-auto flex-1">
-              {isLoadingMappings ? (
-                <div className="p-6 space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 animate-pulse"
-                    >
-                      <div className="size-4 bg-gray-200 rounded" />
-                      <div className="h-4 bg-gray-200 rounded flex-1" />
-                    </div>
-                  ))}
-                </div>
-              ) : filteredMappings.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  <Search className="size-8 mx-auto mb-2 opacity-50" />
-                  <div className="text-sm">
-                    {search
-                      ? `No results for "${search}"`
-                      : "No mappings found"}
-                  </div>
-                </div>
-              ) : (
-                filteredMappings.map((mapping) => (
-                  <button
-                    key={mapping.id}
-                    className={[
-                      "w-full flex flex-col gap-1 p-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 cursor-pointer transition-colors",
-                      value === mapping.id ? "bg-gray-50" : "",
-                    ].join(" ")}
-                    onClick={() => handleSelect(mapping)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium truncate">
-                        {mapping.product_knowledge.name}
-                      </span>
-                      {value === mapping.id && (
-                        <Check className="size-4 text-gray-700 shrink-0" />
-                      )}
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      eAushadhi: {mapping.eaushadhi_drug_name}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {eaushadhiDrugName && (
-        <div className="mt-1.5 text-xs text-gray-500">
-          eAushadhi: {eaushadhiDrugName}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Delivery Row ──────────────────────────────────────────────────────────
-interface RowProps {
-  facilityId: string;
-  row: RowItem;
+}: {
+  value: string;
   mappings: ProductMapping[];
   isLoadingMappings: boolean;
-  onChange: (updated: RowItem) => void;
-  onRemove: () => void;
+  onSelect: (mapping: ProductMapping) => void;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(mappingId) => {
+        const mapping = mappings.find((m) => m.id === mappingId);
+        if (mapping) onSelect(mapping);
+      }}
+      disabled={isLoadingMappings}
+    >
+      <SelectTrigger size="sm" className="w-full">
+        <SelectValue placeholder="Select a product" />
+      </SelectTrigger>
+      <SelectContent>
+        {mappings.map((mapping) => (
+          <SelectItem key={mapping.id} value={mapping.id}>
+            {mapping.product_knowledge.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
-
+// ─── Delivery Row ──────────────────────────────────────────────────────────
 function DeliveryRow({
   facilityId,
   row,
@@ -286,63 +126,47 @@ function DeliveryRow({
   isLoadingMappings,
   onChange,
   onRemove,
-}: RowProps) {
+}: {
+  facilityId: string;
+  row: RowItem;
+  mappings: ProductMapping[];
+  isLoadingMappings: boolean;
+  onChange: (updated: RowItem) => void;
+  onRemove: () => void;
+}) {
   const set = useCallback(
     (field: keyof RowItem, value: unknown) =>
       onChange({ ...row, [field]: value } as RowItem),
     [row, onChange],
   );
-
   const queryClient = useQueryClient();
-
-  // Auto qty = pack_size × pack_qty
+  // Auto-calculate quantity from pack size and pack quantity
   useEffect(() => {
     const qty = (row.pack_size || 1) * (row.pack_qty || 1);
     if (String(qty) !== row.quantity) {
       onChange({ ...row, quantity: String(qty) });
     }
   }, [row.pack_size, row.pack_qty]); // eslint-disable-line
-
-  // Auto accepted qty = pack_size × accepted_pack_qty
+  // Auto-calculate accepted quantity
   useEffect(() => {
     const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
     if (String(acceptedQty) !== row.accepted_qty_in_units) {
       onChange({ ...row, accepted_qty_in_units: String(acceptedQty) });
     }
   }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
-
   const handleSelectMapping = (mapping: ProductMapping) => {
     queryClient.removeQueries({
       queryKey: ["products-autofill", facilityId, mapping.product_knowledge.id],
     });
     onChange({
-      ...EMPTY_ROW(),
+      ...row,
       product_knowledge_id: mapping.product_knowledge.id,
       product_knowledge_slug: mapping.product_knowledge.slug,
       product_knowledge_name: mapping.product_knowledge.name,
-      eaushadhi_drug_name: mapping.eaushadhi_drug_name,
       product_mapping_id: mapping.id,
+      // Keep the original eaushadhi_drug_name from inward record, don't override it
     });
   };
-
-  const handleSelectExisting = (product: Product) => {
-    const ci = product.charge_item_definition;
-    const packSize = product.standard_pack_size ?? 1;
-    onChange({
-      ...row,
-      supplied_item_id: product.id,
-      batch_number: product.batch?.lot_number ?? "",
-      expiry_date: product.expiration_date
-        ? product.expiration_date.slice(0, 10)
-        : "",
-      is_new_batch: false,
-      charge_item_definition_slug: ci?.slug ?? "",
-      pack_size: packSize,
-      pack_qty: 1,
-      quantity: String(packSize),
-    });
-  };
-
   const { data: autoFillData } = useQuery({
     queryKey: ["products-autofill", facilityId, row.product_knowledge_id],
     queryFn: () =>
@@ -358,11 +182,9 @@ function DeliveryRow({
       ),
     enabled: !!row.product_knowledge_id,
   });
-
   useEffect(() => {
     const product = autoFillData?.results?.[0];
     if (!product || row.is_new_batch || row.batch_number) return;
-
     const ci = product.charge_item_definition;
     const packSize = product.standard_pack_size ?? 1;
     onChange({
@@ -382,62 +204,66 @@ function DeliveryRow({
             packSize,
         ),
       ),
+      // Keep the original eaushadhi_drug_name from inward record
     });
   }, [autoFillData]); // eslint-disable-line
-
   const isProductSelected = !!row.product_knowledge_slug;
-
   return (
     <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
-      <td className="px-2 py-2 flex-1">
-        <ProductMappingSelector
-          value={row.product_mapping_id || ""}
-          label={row.product_knowledge_name}
-          eaushadhiDrugName={row.eaushadhi_drug_name}
-          mappings={mappings}
-          isLoadingMappings={isLoadingMappings}
-          onSelect={handleSelectMapping}
-        />
+      <td className="px-2 py-2 min-w-[280px] max-w-[400px]">
+        <div className="flex flex-col gap-1">
+          <ProductMappingSelector
+            value={row.product_mapping_id || ""}
+            mappings={mappings}
+            isLoadingMappings={isLoadingMappings}
+            onSelect={handleSelectMapping}
+          />
+          {row.eaushadhi_drug_name && (
+            <span className="text-xs text-gray-500 truncate">
+              eAushadhi: {row.eaushadhi_drug_name}
+            </span>
+          )}
+        </div>
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 min-w-[150px]">
         <Input
           type="text"
           value={row.batch_number}
           onChange={(e) => set("batch_number", e.target.value)}
           disabled={!isProductSelected}
-          className="h-9 text-xs min-w-[10rem]"
+          className="h-9 text-xs w-full"
         />
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 min-w-[150px]">
         <Input
           type="date"
           value={row.expiry_date}
           onChange={(e) => set("expiry_date", e.target.value)}
           disabled={!isProductSelected}
-          className="h-9 text-xs min-w-[10rem]"
+          className="h-9 text-xs w-full"
         />
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 w-24">
         <Input
           type="number"
           min={1}
           value={row.pack_size}
           onChange={(e) => set("pack_size", parseInt(e.target.value) || 1)}
           disabled={!isProductSelected}
-          className="h-9 text-xs w-20"
+          className="h-9 text-xs w-full"
         />
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 w-24">
         <Input
           type="number"
           min={1}
           value={row.pack_qty}
           onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
           disabled={!isProductSelected}
-          className="h-9 text-xs w-24"
+          className="h-9 text-xs w-full"
         />
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 w-32">
         <Input
           type="number"
           min={0}
@@ -445,25 +271,25 @@ function DeliveryRow({
           onChange={(e) =>
             set("accepted_pack_qty", parseInt(e.target.value) || 0)
           }
-          className="h-9 text-xs w-32"
+          className="h-9 text-xs w-full"
         />
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 w-32">
         <div className="flex flex-col gap-1">
           <Input
             type="number"
             value={row.accepted_qty_in_units}
             disabled
-            className="h-9 text-xs bg-gray-100 text-gray-600 w-32"
+            className="h-9 text-xs bg-gray-100 text-gray-600 w-full"
           />
           {row.quantity_in_units && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 truncate">
               Original Qty: {row.quantity_in_units}
             </span>
           )}
         </div>
       </td>
-      <td className="px-2 py-2 shrink-0">
+      <td className="px-2 py-2 shrink-0 w-16">
         <button
           onClick={onRemove}
           className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
@@ -474,66 +300,54 @@ function DeliveryRow({
     </tr>
   );
 }
-
 // ─── Main Form ─────────────────────────────────────────────────────────────
-interface Props {
-  facilityId: string;
-  deliveryOrderId: string;
-  destination: string;
-  onSuccess: () => void;
-  inwardRecordId?: string;
-}
-
 export default function AddSupplyDeliveryForm({
   facilityId,
   deliveryOrderId,
   destination,
   onSuccess,
   inwardRecordId: propInwardRecordId,
-}: Props) {
+}: {
+  facilityId: string;
+  deliveryOrderId: string;
+  destination: string;
+  onSuccess: () => void;
+  inwardRecordId?: string;
+}) {
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
-
   // Extract inward_record_id from URL query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("inward_record_id");
-    if (id) {
-      setUrlInwardRecordId(id);
-    }
+    if (id) setUrlInwardRecordId(id);
   }, []);
-
-  // Use URL param if available, otherwise use prop
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
-
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
   }, []);
-
   const removeRow = useCallback((index: number) => {
     setRows((prev) => prev.filter((_, i) => i !== index));
   }, []);
-
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
-
-  // Fetch product mappings on page load
+  // Fetch product mappings
   const { data: mappingsData, isLoading: isLoadingMappings } = useQuery({
     queryKey: ["product-mappings", facilityId, inwardRecordId],
     queryFn: () =>
-      request<{
-        results: ProductMapping[];
-      }>(`/api/care_eaushadhi/product-mappings/`, HttpMethod.GET, {
-        facility_id: facilityId,
-        inward_record_id: inwardRecordId,
-        limit: 100,
-      }),
+      request<{ results: ProductMapping[] }>(
+        `/api/care_eaushadhi/product-mappings/`,
+        HttpMethod.GET,
+        {
+          facility_id: facilityId,
+          inward_record_id: inwardRecordId,
+          limit: 100,
+        },
+      ),
     enabled: !!inwardRecordId,
   });
-
   const mappings = mappingsData?.results ?? [];
-
   // Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
@@ -544,22 +358,15 @@ export default function AddSupplyDeliveryForm({
       ),
     enabled: !!inwardRecordId,
   });
-
   useEffect(() => {
-    if (!inwardRecord?.items || inwardRecord.items.length === 0) {
-      return;
-    }
-
+    if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
     try {
       const newRows = inwardRecord.items.map((item) => {
         const expiryDate = item.expiry_date
           ? item.expiry_date.split("T")[0]
           : "";
-        // unit_pack is pack size, quantity_received_current is total qty received
         const packSize = parseFloat(item.unit_pack) || 1;
         const receivedQty = parseFloat(item.quantity_received_current) || 0;
-        const quantity = String(receivedQty); // Total quantity received
-
         return {
           ...EMPTY_ROW(),
           product_knowledge_name: item.drug_name,
@@ -567,16 +374,16 @@ export default function AddSupplyDeliveryForm({
           expiry_date: expiryDate,
           pack_size: packSize,
           pack_qty: receivedQty,
-          quantity: quantity,
+          quantity: String(receivedQty),
           accepted_pack_qty: receivedQty,
           accepted_qty_in_units: String(packSize * receivedQty),
           quantity_in_units: item.quantity_in_units
             ? String(Math.floor(parseFloat(item.quantity_in_units)))
             : "",
+          eaushadhi_drug_name: item.drug_name,
           is_new_batch: true,
         } as RowItem;
       });
-
       setRows(newRows);
       setPrefillError("");
     } catch (err) {
@@ -586,7 +393,6 @@ export default function AddSupplyDeliveryForm({
       );
     }
   }, [inwardRecord]);
-
   const { mutateAsync: createChargeItem } = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       request<{ id: string; slug: string }>(
@@ -595,7 +401,6 @@ export default function AddSupplyDeliveryForm({
         data,
       ),
   });
-
   const { mutateAsync: createProduct } = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       request<{ id: string }>(
@@ -604,12 +409,10 @@ export default function AddSupplyDeliveryForm({
         data,
       ),
   });
-
   const { mutateAsync: createSupplyDelivery } = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       request(`/api/v1/supply_delivery/`, HttpMethod.POST, data),
   });
-
   function validate(): boolean {
     for (const [i, row] of rows.entries()) {
       const n = i + 1;
@@ -628,22 +431,18 @@ export default function AddSupplyDeliveryForm({
     }
     return true;
   }
-
   async function handleSave() {
     if (rows.length === 0) {
       toast.error("Add at least one item");
       return;
     }
     if (!validate()) return;
-
     setIsProcessing(true);
     let successCount = 0;
-
     for (const row of rows) {
       try {
         let productId = row.supplied_item_id;
         let chargeItemSlug = row.charge_item_definition_slug;
-
         if (!productId || row.is_new_batch) {
           const ci = await createChargeItem({
             slug_value: crypto.randomUUID(),
@@ -655,9 +454,7 @@ export default function AddSupplyDeliveryForm({
             ],
             discount_configuration: null,
           });
-
           chargeItemSlug = ci.slug;
-
           const prod = await createProduct({
             status: "active",
             batch: { lot_number: row.batch_number },
@@ -667,10 +464,8 @@ export default function AddSupplyDeliveryForm({
             standard_pack_size: row.pack_size,
             extensions: {},
           });
-
           productId = prod.id;
         }
-
         await createSupplyDelivery({
           status: "in_progress",
           supplied_item_type: "product",
@@ -683,14 +478,12 @@ export default function AddSupplyDeliveryForm({
           order: deliveryOrderId,
           extensions: {},
         });
-
         successCount++;
       } catch (err) {
         console.error(err);
         toast.error(`Failed to save: ${row.product_knowledge_name}`);
       }
     }
-
     setIsProcessing(false);
     if (successCount > 0) {
       toast.success(`${successCount} item(s) saved successfully`);
@@ -698,7 +491,6 @@ export default function AddSupplyDeliveryForm({
       onSuccess();
     }
   }
-
   if (inwardRecordId && isLoadingInward) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -709,7 +501,6 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
-
   if (prefillError) {
     return (
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
@@ -721,7 +512,6 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
-
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -741,14 +531,13 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
-
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-100">
             <tr className="divide-x divide-gray-200">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 flex-1">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[280px] max-w-[400px]">
                 Product
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
@@ -769,7 +558,7 @@ export default function AddSupplyDeliveryForm({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
                 Qty In Units
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
                 Actions
               </th>
             </tr>
