@@ -1,8 +1,23 @@
-import { lazy } from "react";
+import { lazy, Suspense } from "react";
 import EAusdhadhiFetchPage from "./pages/EAusdhadhiFetchPage.tsx";
 import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
 import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
+import { TruckIcon } from "lucide-react";
+
+// Wrapper component for pages
+function PageWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-8">eAushadhi Plugin Loading...</div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
+
 
 const manifest = {
   plugin: "care_eaushadhi",
@@ -13,14 +28,21 @@ const manifest = {
     ),
   },
   routes: {
+    "/admin/eaushadhi/institute-mappings": () => (
+      <PageWrapper>
+        <div> {/* // to be replaced with actual page*/}
+          to be added with institute mappings page
+        </div>
+      </PageWrapper>
+    ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch": ({
       facilityId,
       locationId,
     }: {
       facilityId: string;
       locationId: string;
-    }) => (
-      <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} />
+    }) => (<PageWrapper>
+      <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} /></PageWrapper>
     ),
 
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit":
@@ -33,11 +55,13 @@ const manifest = {
         locationId: string;
         deliveryOrderId: string;
       }) => (
-        <DeliveryOrderForm
-          facilityId={facilityId}
-          locationId={locationId}
-          deliveryOrderId={deliveryOrderId}
-        />
+        <PageWrapper>
+          <DeliveryOrderForm
+            facilityId={facilityId}
+            locationId={locationId}
+            deliveryOrderId={deliveryOrderId}
+          />
+        </PageWrapper>
       ),
 
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId": ({
@@ -49,14 +73,15 @@ const manifest = {
       locationId: string;
       deliveryOrderId: string;
     }) => (
-      <DeliveryOrderShow
-        facilityId={facilityId}
-        locationId={locationId}
-        deliveryOrderId={deliveryOrderId}
-        internal={false}
-      />
+      <PageWrapper>
+        <DeliveryOrderShow
+          facilityId={facilityId}
+          locationId={locationId}
+          deliveryOrderId={deliveryOrderId}
+          internal={false}
+        />
+      </PageWrapper>
     ),
-
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch-new/:deliveryOrderId": ({
       facilityId,
       locationId,
@@ -66,16 +91,23 @@ const manifest = {
       locationId: string;
       deliveryOrderId: string;
     }) => (
-      <DeliveryOrderFetch
-        facilityId={facilityId}
-        locationId={locationId}
-        deliveryOrderId={deliveryOrderId}
-      />
+      <PageWrapper>
+        <DeliveryOrderFetch
+          facilityId={facilityId}
+          locationId={locationId}
+          deliveryOrderId={deliveryOrderId}
+        />
+      </PageWrapper>
     ),
   },
-
   navItems: [],
-  adminNavItems: [],
+  adminNavItems: [
+    {
+      url: "/admin/eaushadhi/institute-mappings",
+      name: "eAushadhi Institute Mapping",
+      icon: <TruckIcon />,
+    },
+  ]
 };
 
 export default manifest;
