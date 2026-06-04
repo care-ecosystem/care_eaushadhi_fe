@@ -5,9 +5,8 @@ import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
 import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
 import React from "react";
-import { TruckIcon } from "lucide-react";
+import { Settings } from "lucide-react";
 
-// Wrapper component for pages
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
@@ -20,7 +19,6 @@ function PageWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-
 const manifest = {
   plugin: "care_eaushadhi",
   extends: [],
@@ -32,7 +30,7 @@ const manifest = {
   routes: {
     "/admin/eaushadhi/institute-mappings": () => (
       <PageWrapper>
-       <InstituteMappingAdmin />
+        <InstituteMappingAdmin />
       </PageWrapper>
     ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch": ({
@@ -41,29 +39,28 @@ const manifest = {
     }: {
       facilityId: string;
       locationId: string;
-    }) => (<PageWrapper>
-      <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} /></PageWrapper>
+    }) => (
+      <PageWrapper>
+        <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} />
+      </PageWrapper>
     ),
-
-    "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit":
-      ({
-        facilityId,
-        locationId,
-        deliveryOrderId,
-      }: {
-        facilityId: string;
-        locationId: string;
-        deliveryOrderId: string;
-      }) => (
-        <PageWrapper>
-          <DeliveryOrderForm
-            facilityId={facilityId}
-            locationId={locationId}
-            deliveryOrderId={deliveryOrderId}
-          />
-        </PageWrapper>
-      ),
-
+    "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit": ({
+      facilityId,
+      locationId,
+      deliveryOrderId,
+    }: {
+      facilityId: string;
+      locationId: string;
+      deliveryOrderId: string;
+    }) => (
+      <PageWrapper>
+        <DeliveryOrderForm
+          facilityId={facilityId}
+          locationId={locationId}
+          deliveryOrderId={deliveryOrderId}
+        />
+      </PageWrapper>
+    ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId": ({
       facilityId,
       locationId,
@@ -103,11 +100,11 @@ const manifest = {
   navItems: [],
   adminNavItems: [
     {
+      name: "eAushadhi Mappings",
       url: "/admin/eaushadhi/institute-mappings",
-      name: "eAushadhi Institute Mapping",
-      icon: <TruckIcon />,
+      icon: React.createElement(Settings, { className: "size-4" }),
     },
-  ]
+  ],
 };
 
 export default manifest;
