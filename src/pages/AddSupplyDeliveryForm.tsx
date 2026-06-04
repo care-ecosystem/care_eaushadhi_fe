@@ -636,7 +636,7 @@ function ProductKnowledgeSelector({
   const showItems = !!search || !!currentParent;
 
   return (
-    <div className="relative min-w-[180px]">
+    <div className="relative w-45">
       <button
         type="button"
         className="flex items-center border border-gray-300 rounded-md h-9 px-3 cursor-pointer hover:border-gray-400 bg-white transition-colors w-full shadow-xs"

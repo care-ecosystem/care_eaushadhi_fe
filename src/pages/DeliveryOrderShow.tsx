@@ -165,9 +165,6 @@ export default function DeliveryOrderShow({
     },
   });
 
-  console.log("Delivery Order:", deliveryOrder);
-  console.log("Supply Deliveries:", supplyDeliveriesData?.results);
-
   const supplyDeliveries = supplyDeliveriesData?.results ?? [];
   const isRequester = locationId === deliveryOrder?.destination.id;
 
@@ -297,7 +294,7 @@ export default function DeliveryOrderShow({
   }
 
   return (
-    <div className="w-full px-6 py-6 space-y-6 max-w-5xl mx-auto">
+    <div className="w-full px-6 py-6 space-y-6 mx-auto">
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-4">
