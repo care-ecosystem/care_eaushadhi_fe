@@ -176,9 +176,6 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
           onClick={() => navigate(returnPath)}
         >
           Cancel
-          <span className="ml-1.5 text-xs bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-mono">
-            ESC
-          </span>
         </Button>
 
         <Button
@@ -194,9 +191,6 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
           }}
         >
           {isPending ? "Fetching..." : "Fetch"}
-          <span className="ml-1.5 text-xs bg-green-600 border border-green-500 rounded px-1.5 py-0.5 font-mono">
-            ENTER
-          </span>
         </Button>
       </div>
     </div>

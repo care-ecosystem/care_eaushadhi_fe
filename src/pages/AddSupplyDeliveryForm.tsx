@@ -1315,13 +1315,6 @@ export default function AddSupplyDeliveryForm({
       </div>
 
       <div className="flex items-center justify-between">
-        <Button
-          variant="outline"
-          onClick={addRow}
-          className="flex items-center gap-2"
-        >
-          <PlusCircle className="size-4" /> Add Another
-        </Button>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -1332,9 +1325,6 @@ export default function AddSupplyDeliveryForm({
           </Button>
           <Button onClick={handleSave} disabled={isProcessing}>
             {isProcessing ? "Saving..." : "Save"}
-            <span className="ml-1.5 text-[10px] bg-green-800 border border-green-700 rounded px-1.5 py-0.5 font-mono">
-              ⇧ ENTER
-            </span>
           </Button>
         </div>
       </div>

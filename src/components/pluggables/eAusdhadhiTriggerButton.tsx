@@ -9,6 +9,7 @@ interface Props {
 export default function EAusdhadhiTriggerButton({ facilityId, locationId }: Props) {
     return (
         <Button
+        variant="outline_primary"
             onClick={() =>
                 navigate(`/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch`)
             }
