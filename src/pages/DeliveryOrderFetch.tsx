@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   facilityId: string;
@@ -119,16 +120,16 @@ export default function DeliveryOrderFetch({
 
     const parsed = raw
       ? (() => {
-          const [month, day, year] = raw.split("/");
-          return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-        })()
+        const [month, day, year] = raw.split("/");
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      })()
       : null;
 
     const apiFormat = raw
       ? (() => {
-          const [month, day, year] = raw.split("/");
-          return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
-        })()
+        const [month, day, year] = raw.split("/");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      })()
       : null;
 
     return {
@@ -318,14 +319,12 @@ export default function DeliveryOrderFetch({
       <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
         <div className="flex flex-col items-center gap-2 text-center">
           <span
-            className={`inline-flex items-center justify-center size-10 rounded-full ${
-              isFailed ? "bg-red-100" : "bg-yellow-100"
-            }`}
+            className={`inline-flex items-center justify-center size-10 rounded-full ${isFailed ? "bg-red-100" : "bg-yellow-100"
+              }`}
           >
             <span
-              className={`text-lg font-bold ${
-                isFailed ? "text-red-600" : "text-yellow-600"
-              }`}
+              className={`text-lg font-bold ${isFailed ? "text-red-600" : "text-yellow-600"
+                }`}
             >
               {isFailed ? "!" : "∅"}
             </span>
@@ -334,25 +333,26 @@ export default function DeliveryOrderFetch({
           <p className="text-sm text-gray-500 max-w-sm">{description}</p>
         </div>
         <div className="flex gap-3 flex-wrap justify-center">
-          <button
+          <Button
             onClick={handleRetry}
             disabled={isInitiating}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-2"
           >
             {isInitiating ? (
               <Loader2Icon className="size-4 animate-spin" />
             ) : (
               <RefreshCw className="size-4" />
             )}
-            {retryLabel}
-          </button>
-          <button
+            Fetch from eAushadhi
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => handleAddManually(record?.id)}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2"
           >
             <PencilLine className="size-4" />
             Add Manually
-          </button>
+          </Button>
         </div>
       </div>
     );
