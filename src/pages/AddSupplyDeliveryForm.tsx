@@ -9,14 +9,13 @@
  * - Maps inward items to delivery rows with batch, expiry, quantity
  * - Handles product knowledge lookup and category selection
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ChevronDown,
   ChevronRight,
   Check,
   FolderOpen,
   Home,
-  Plus,
   PlusCircle,
   Search,
   Trash2,
@@ -31,20 +30,6 @@ import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-
-interface MonetaryComponentCode {
-  code: string;
-  display: string;
-  system?: string;
-}
-
-interface MonetaryComponent {
-  monetary_component_type: "tax" | "discount" | "informational" | "base";
-  code?: MonetaryComponentCode;
-  factor?: number | null;
-  amount?: string | null;
-}
-
 interface ProductKnowledge {
   id: string;
   slug: string;
@@ -58,12 +43,6 @@ interface ChargeItemDefinition {
   slug: string;
   title: string;
   category?: { id: string; slug: string; title: string };
-  price_components?: Array<{
-    monetary_component_type: string;
-    amount: string;
-    code?: MonetaryComponentCode;
-    factor?: number;
-  }>;
 }
 
 interface Product {
@@ -72,8 +51,6 @@ interface Product {
   batch?: { lot_number: string };
   expiration_date?: string;
   standard_pack_size?: number;
-  purchase_price?: number | string;
-  product_knowledge?: ProductKnowledge;
   charge_item_definition?: ChargeItemDefinition;
 }
 
@@ -81,33 +58,23 @@ interface ResourceCategory {
   id: string;
   slug: string;
   title: string;
-  description?: string;
   has_children?: boolean;
-  parent?: ResourceCategory;
 }
 
 interface RowItem {
   product_knowledge_id: string;
   product_knowledge_slug: string;
   product_knowledge_name: string;
-  product_knowledge_unit: string;
   supplied_item_id: string;
   batch_number: string;
   expiry_date: string;
   is_new_batch: boolean;
-  charge_item_category_slug: string;
-  charge_item_category_title: string;
   charge_item_definition_slug: string;
-  unit_price: string;
-  mrp: string;
-  purchase_price: string;
-  total_purchase_price: string;
-  is_tax_inclusive: boolean;
   pack_size: number;
   pack_qty: number;
   quantity: string;
-  tax_components: MonetaryComponent[];
-  discount_components: MonetaryComponent[];
+  accepted_pack_qty: number;
+  accepted_qty: string;
 }
 
 interface InwardItem {
@@ -128,418 +95,19 @@ const EMPTY_ROW = (): RowItem => ({
   product_knowledge_id: "",
   product_knowledge_slug: "",
   product_knowledge_name: "",
-  product_knowledge_unit: "",
   supplied_item_id: "",
   batch_number: "",
   expiry_date: "",
   is_new_batch: false,
-  charge_item_category_slug: "",
-  charge_item_category_title: "",
   charge_item_definition_slug: "",
-  unit_price: "0",
-  mrp: "0",
-  purchase_price: "",
-  total_purchase_price: "",
-  is_tax_inclusive: false,
   pack_size: 1,
   pack_qty: 1,
   quantity: "1",
-  tax_components: [],
-  discount_components: [],
+  accepted_pack_qty: 1,
+  accepted_qty: "1",
 });
 
-interface Props {
-  facilityId: string;
-  deliveryOrderId: string;
-  destination: string;
-  onSuccess: () => void;
-  inwardRecordId?: string;
-}
-
-interface CategoryPickerProps {
-  facilityId: string;
-  value: string;
-  label: string;
-  onChange: (slug: string, title: string) => void;
-  disabled: boolean;
-}
-
-function CategoryPicker({
-  facilityId,
-  value,
-  label,
-  onChange,
-  disabled,
-}: CategoryPickerProps) {
-  const [open, setOpen] = useState(false);
-  const [breadcrumbs, setBreadcrumbs] = useState<
-    { slug: string; title: string }[]
-  >([]);
-  const [currentParent, setCurrentParent] = useState<string | undefined>(
-    undefined,
-  );
-  const [search, setSearch] = useState("");
-
-  const { data } = useQuery({
-    queryKey: [
-      "resourceCategories",
-      facilityId,
-      "charge_item_definition",
-      currentParent,
-      search,
-    ],
-    queryFn: () =>
-      request<{ results: ResourceCategory[] }>(
-        `/api/v1/facility/${facilityId}/resource_category/`,
-        HttpMethod.GET,
-        {
-          resource_type: "charge_item_definition",
-          parent: currentParent || undefined,
-          title: search || undefined,
-          limit: 100,
-        },
-      ),
-    enabled: open,
-  });
-
-  const categories = data?.results ?? [];
-
-  const resetNav = () => {
-    setBreadcrumbs([]);
-    setCurrentParent(undefined);
-    setSearch("");
-  };
-
-  const handleSelect = (cat: ResourceCategory) => {
-    if (cat.has_children) {
-      setBreadcrumbs((prev) => [...prev, { slug: cat.slug, title: cat.title }]);
-      setCurrentParent(cat.slug);
-      setSearch("");
-    } else {
-      onChange(cat.slug, cat.title);
-      setOpen(false);
-      resetNav();
-    }
-  };
-
-  const handleBreadcrumb = (index: number) => {
-    const nb = breadcrumbs.slice(0, index + 1);
-    setBreadcrumbs(nb);
-    setCurrentParent(nb[index]?.slug);
-    setSearch("");
-  };
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen(true)}
-        className={[
-          "flex items-center border rounded-md h-9 px-2 transition-colors min-w-[130px] w-full",
-          disabled
-            ? "opacity-50 cursor-not-allowed bg-gray-50 border-gray-200"
-            : "bg-white hover:border-gray-400 cursor-pointer border-gray-200",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "flex-1 text-xs truncate text-left",
-            !label ? "text-gray-400" : "text-gray-900",
-          ].join(" ")}
-        >
-          {label || "Select category..."}
-        </span>
-        <ChevronDown className="size-3 text-gray-400 shrink-0 ml-1" />
-      </button>
-
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => {
-              setOpen(false);
-              resetNav();
-            }}
-          />
-          <div className="absolute top-full left-0 z-20 w-72 bg-white border border-gray-200 rounded-md shadow-lg mt-1">
-            {/* Header */}
-            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <Home className="size-3" />
-                <span className="font-medium">
-                  {breadcrumbs.length === 0
-                    ? "Root"
-                    : breadcrumbs[breadcrumbs.length - 1].title}
-                </span>
-              </div>
-              {value && (
-                <button
-                  className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
-                  onClick={() => {
-                    onChange("", "");
-                    setOpen(false);
-                    resetNav();
-                  }}
-                >
-                  <X className="size-3" /> Clear
-                </button>
-              )}
-            </div>
-
-            {/* Breadcrumbs */}
-            {breadcrumbs.length > 0 && (
-              <div className="px-3 py-1.5 bg-gray-100 border-b border-gray-100 flex items-center gap-1 text-xs overflow-x-auto">
-                <button
-                  className="text-gray-500 hover:text-gray-700 flex items-center gap-0.5 shrink-0"
-                  onClick={resetNav}
-                >
-                  <Home className="size-3" /> Root
-                </button>
-                {breadcrumbs.map((b, i) => (
-                  <span
-                    key={b.slug}
-                    className="flex items-center gap-1 shrink-0"
-                  >
-                    <ChevronRight className="size-3 text-gray-400" />
-                    <button
-                      className="text-gray-600 hover:text-gray-900"
-                      onClick={() => handleBreadcrumb(i)}
-                    >
-                      {b.title}
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Search */}
-            <div className="p-2 border-b border-gray-100">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-gray-400" />
-                <Input
-                  autoFocus
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search categories..."
-                  className="pl-8 h-7 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* List */}
-            <div className="max-h-56 overflow-y-auto">
-              {categories.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">
-                  No categories found
-                </p>
-              ) : (
-                categories.map((cat) => (
-                  <button
-                    key={cat.slug}
-                    className="w-full text-left px-3 py-2.5 text-xs hover:bg-gray-50 flex items-center justify-between border-b border-gray-50 last:border-0"
-                    onClick={() => handleSelect(cat)}
-                  >
-                    <span
-                      className={[
-                        "font-medium",
-                        value === cat.slug ? "text-green-700" : "text-gray-900",
-                      ].join(" ")}
-                    >
-                      {cat.title}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      {value === cat.slug && (
-                        <Check className="size-3 text-green-600" />
-                      )}
-                      {cat.has_children && (
-                        <ChevronRight className="size-3 text-gray-400" />
-                      )}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Batch Selector ────────────────────────────────────────────────────────
-
-interface BatchSelectorProps {
-  facilityId: string;
-  productKnowledgeId: string;
-  productKnowledgeSlug: string;
-  batchNumber: string;
-  suppliedItemId: string;
-  isNewBatch: boolean;
-  onBatchInput: (value: string) => void;
-  onSelectExisting: (product: Product) => void;
-  onMarkAsNew: () => void;
-  disabled: boolean;
-}
-
-function BatchSelector({
-  facilityId,
-  productKnowledgeId,
-  productKnowledgeSlug,
-  batchNumber,
-  suppliedItemId,
-  isNewBatch,
-  onBatchInput,
-  onSelectExisting,
-  onMarkAsNew,
-  disabled,
-}: BatchSelectorProps) {
-  const [open, setOpen] = useState(false);
-
-  const { data: productsData, isLoading } = useQuery({
-    queryKey: ["products", facilityId, productKnowledgeSlug],
-    queryFn: () =>
-      request<{ results: Product[] }>(
-        `/api/v1/facility/${facilityId}/product/`,
-        HttpMethod.GET,
-        {
-          product_knowledge: productKnowledgeId,
-          ordering: "-created_date",
-          limit: 100,
-          status: "active",
-        },
-      ),
-    enabled: !!productKnowledgeId,
-  });
-
-  const products = productsData?.results ?? [];
-
-  const filtered = useMemo(
-    () =>
-      products.filter(
-        (p) =>
-          !batchNumber ||
-          p.batch?.lot_number
-            ?.toLowerCase()
-            .includes(batchNumber.toLowerCase()),
-      ),
-    [products, batchNumber],
-  );
-
-  const formatExpiry = (date?: string) => {
-    if (!date) return "N/A";
-    return new Date(date).toLocaleDateString("en-US", {
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  return (
-    <div className="relative">
-      <div
-        className={[
-          "flex items-center border rounded-md h-9 px-2 transition-colors",
-          disabled
-            ? "opacity-50 pointer-events-none"
-            : "cursor-pointer hover:border-gray-400",
-          isNewBatch
-            ? "border-green-500 bg-green-50"
-            : "border-gray-200 bg-white",
-        ].join(" ")}
-        onClick={() => !disabled && setOpen(true)}
-      >
-        <input
-          value={batchNumber}
-          onChange={(e) => {
-            onBatchInput(e.target.value);
-            setOpen(true);
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen(true);
-          }}
-          placeholder="Batch #"
-          disabled={disabled}
-          className={[
-            "flex-1 text-xs border-0 outline-none min-w-[90px] bg-transparent",
-            isNewBatch ? "bg-green-50" : "",
-          ].join(" ")}
-        />
-        <ChevronDown className="size-3 text-gray-400 shrink-0 ml-1" />
-      </div>
-
-      {isNewBatch && (
-        <span className="text-[10px] mt-0.5 text-green-600 border border-green-300 rounded px-1 inline-block">
-          New
-        </span>
-      )}
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 z-20 w-[300px] bg-white border border-gray-200 rounded-md shadow-lg mt-1">
-            {batchNumber && (
-              <div className="border-b border-gray-100">
-                <button
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2 text-green-700"
-                  onClick={() => {
-                    onMarkAsNew();
-                    setOpen(false);
-                  }}
-                >
-                  <Plus className="size-3" />
-                  Create batch: <strong className="ml-1">{batchNumber}</strong>
-                </button>
-              </div>
-            )}
-            <div className="max-h-[220px] overflow-y-auto">
-              {isLoading ? (
-                <p className="text-xs text-gray-400 text-center py-4">
-                  Loading...
-                </p>
-              ) : filtered.length === 0 && !batchNumber ? (
-                <p className="text-xs text-gray-400 text-center py-4">
-                  Type a batch number to search or create
-                </p>
-              ) : filtered.length > 0 ? (
-                <div>
-                  <p className="text-[10px] text-gray-500 px-3 py-1.5 font-medium uppercase tracking-wide border-b border-gray-100">
-                    Existing batches
-                  </p>
-                  {filtered.map((p) => (
-                    <button
-                      key={p.id}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between"
-                      onClick={() => {
-                        onSelectExisting(p);
-                        setOpen(false);
-                      }}
-                    >
-                      <div>
-                        <span className="font-medium">
-                          #{p.batch?.lot_number ?? "N/A"}
-                        </span>
-                        <span className="text-gray-400 ml-2">
-                          Exp: {formatExpiry(p.expiration_date)}
-                        </span>
-                      </div>
-                      {suppliedItemId === p.id && (
-                        <Check className="size-3 text-green-600" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── Product Knowledge Selector ────────────────────────────────────────────
-
 interface ProductKnowledgeSelectorProps {
   facilityId: string;
   value: string;
@@ -657,7 +225,6 @@ function ProductKnowledgeSelector({
           ].join(" ")}
         />
       </button>
-
       {open && (
         <>
           <div
@@ -691,7 +258,6 @@ function ProductKnowledgeSelector({
                 </button>
               )}
             </div>
-
             {breadcrumbs.length > 0 && (
               <div className="px-3 py-1.5 border-b bg-gray-100 flex items-center gap-1 text-xs overflow-x-auto shrink-0">
                 <button
@@ -716,7 +282,6 @@ function ProductKnowledgeSelector({
                 ))}
               </div>
             )}
-
             <div className="px-3 border-b shrink-0">
               <div className="flex items-center gap-2 h-9">
                 <Search className="size-4 text-gray-400 shrink-0" />
@@ -729,7 +294,6 @@ function ProductKnowledgeSelector({
                 />
               </div>
             </div>
-
             <div className="overflow-y-auto flex-1">
               {isLoading ? (
                 <div className="p-6 space-y-3">
@@ -814,8 +378,7 @@ function ProductKnowledgeSelector({
   );
 }
 
-// ─── Row ───────────────────────────────────────────────────────────────────
-
+// ─── Delivery Row ──────────────────────────────────────────────────────────
 interface RowProps {
   facilityId: string;
   row: RowItem;
@@ -835,9 +398,18 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
   // Auto qty = pack_size × pack_qty
   useEffect(() => {
     const qty = (row.pack_size || 1) * (row.pack_qty || 1);
-    if (String(qty) !== row.quantity)
+    if (String(qty) !== row.quantity) {
       onChange({ ...row, quantity: String(qty) });
+    }
   }, [row.pack_size, row.pack_qty]); // eslint-disable-line
+
+  // Auto accepted qty = pack_size × accepted_pack_qty
+  useEffect(() => {
+    const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
+    if (String(acceptedQty) !== row.accepted_qty) {
+      onChange({ ...row, accepted_qty: String(acceptedQty) });
+    }
+  }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
 
   const handleSelectPK = (pk: ProductKnowledge) => {
     queryClient.removeQueries({
@@ -848,16 +420,12 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
       product_knowledge_id: pk.id,
       product_knowledge_slug: pk.slug,
       product_knowledge_name: pk.name,
-      product_knowledge_unit: pk.base_unit?.display ?? "",
-      charge_item_category_slug: pk.category?.slug ?? "",
-      charge_item_category_title: pk.category?.title ?? "",
     });
   };
 
   const handleSelectExisting = (product: Product) => {
     const ci = product.charge_item_definition;
     const packSize = product.standard_pack_size ?? 1;
-
     onChange({
       ...row,
       supplied_item_id: product.id,
@@ -867,10 +435,6 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
         : "",
       is_new_batch: false,
       charge_item_definition_slug: ci?.slug ?? "",
-      charge_item_category_slug:
-        ci?.category?.slug ?? row.charge_item_category_slug,
-      charge_item_category_title:
-        ci?.category?.title ?? row.charge_item_category_title,
       pack_size: packSize,
       pack_qty: 1,
       quantity: String(packSize),
@@ -896,10 +460,8 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
   useEffect(() => {
     const product = autoFillData?.results?.[0];
     if (!product || row.is_new_batch || row.batch_number) return;
-
     const ci = product.charge_item_definition;
     const packSize = product.standard_pack_size ?? 1;
-
     onChange({
       ...row,
       supplied_item_id: product.id,
@@ -909,24 +471,22 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
         : "",
       is_new_batch: false,
       charge_item_definition_slug: ci?.slug ?? "",
-      charge_item_category_slug:
-        ci?.category?.slug ?? row.charge_item_category_slug,
-      charge_item_category_title:
-        ci?.category?.title ?? row.charge_item_category_title,
       pack_size: packSize,
-      pack_qty: 1,
-      quantity: String(packSize),
+      pack_qty: Math.max(
+        1,
+        Math.floor(
+          parseFloat((product as any)?.quantity_received_current ?? "0") /
+            packSize,
+        ),
+      ),
     });
   }, [autoFillData]); // eslint-disable-line
 
   const isProductSelected = !!row.product_knowledge_slug;
-  const showCategoryPicker =
-    isProductSelected && (row.is_new_batch || !row.charge_item_category_slug);
 
   return (
     <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
-      {/* Product */}
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 w-full">
         <ProductKnowledgeSelector
           facilityId={facilityId}
           value={row.product_knowledge_slug}
@@ -934,31 +494,15 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           onSelect={handleSelectPK}
         />
       </td>
-
-      {/* Batch */}
       <td className="px-2 py-2">
-        <BatchSelector
-          facilityId={facilityId}
-          productKnowledgeId={row.product_knowledge_id}
-          batchNumber={row.batch_number}
-          suppliedItemId={row.supplied_item_id}
-          productKnowledgeSlug={row.product_knowledge_slug}
-          isNewBatch={row.is_new_batch}
-          onBatchInput={(v) => set("batch_number", v)}
-          onSelectExisting={handleSelectExisting}
-          onMarkAsNew={() =>
-            onChange({
-              ...row,
-              supplied_item_id: "",
-              is_new_batch: true,
-              charge_item_definition_slug: "",
-            })
-          }
+        <Input
+          type="text"
+          value={row.batch_number}
+          onChange={(e) => set("batch_number", e.target.value)}
           disabled={!isProductSelected}
+          className="h-9 text-xs min-w-[10rem]"
         />
       </td>
-
-      {/* Expiry */}
       <td className="px-2 py-2">
         <Input
           type="date"
@@ -968,31 +512,6 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs min-w-[10rem]"
         />
       </td>
-
-      {/* Category */}
-      <td className="px-2 py-2">
-        {showCategoryPicker ? (
-          <CategoryPicker
-            facilityId={facilityId}
-            value={row.charge_item_category_slug}
-            label={row.charge_item_category_title}
-            onChange={(slug, title) =>
-              onChange({
-                ...row,
-                charge_item_category_slug: slug,
-                charge_item_category_title: title,
-              })
-            }
-            disabled={!isProductSelected}
-          />
-        ) : (
-          <span className="text-xs text-gray-600 px-1">
-            {row.charge_item_category_title || "—"}
-          </span>
-        )}
-      </td>
-
-      {/* Pack Size */}
       <td className="px-2 py-2">
         <Input
           type="number"
@@ -1003,8 +522,6 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs w-20"
         />
       </td>
-
-      {/* Pack Qty */}
       <td className="px-2 py-2">
         <Input
           type="number"
@@ -1012,21 +529,28 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           value={row.pack_qty}
           onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
           disabled={!isProductSelected}
-          className="h-9 text-xs w-[6rem]"
+          className="h-9 text-xs w-24"
         />
       </td>
-
-      {/* Qty (auto) */}
       <td className="px-2 py-2">
         <Input
           type="number"
-          value={row.quantity}
-          disabled
-          className="h-9 text-xs w-20 bg-gray-100 text-gray-600"
+          min={0}
+          value={row.accepted_pack_qty}
+          onChange={(e) =>
+            set("accepted_pack_qty", parseInt(e.target.value) || 0)
+          }
+          className="h-9 text-xs w-32"
         />
       </td>
-
-      {/* Delete */}
+      <td className="px-2 py-2">
+        <Input
+          type="number"
+          value={row.accepted_qty}
+          disabled
+          className="h-9 text-xs bg-gray-100 text-gray-600 w-24"
+        />
+      </td>
       <td className="px-2 py-2">
         <button
           onClick={onRemove}
@@ -1040,6 +564,13 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
 }
 
 // ─── Main Form ─────────────────────────────────────────────────────────────
+interface Props {
+  facilityId: string;
+  deliveryOrderId: string;
+  destination: string;
+  onSuccess: () => void;
+  inwardRecordId?: string;
+}
 
 export default function AddSupplyDeliveryForm({
   facilityId,
@@ -1062,9 +593,7 @@ export default function AddSupplyDeliveryForm({
 
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // MODIFICATION: Fetch inward record and prefill rows
-  // ──────────────────────────────────────────────────────────────────────────
+  // Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
     queryFn: () =>
@@ -1079,27 +608,29 @@ export default function AddSupplyDeliveryForm({
     if (!inwardRecord?.items || inwardRecord.items.length === 0) {
       return;
     }
-
     try {
-      // Map inward items to delivery rows
       const newRows = inwardRecord.items.map((item) => {
-        // Format expiry date to YYYY-MM-DD
         const expiryDate = item.expiry_date
           ? item.expiry_date.split("T")[0]
           : "";
+        // unit_pack is pack size, quantity_received_current is total qty received
+        const packSize = parseFloat(item.unit_pack) || 1;
+        const receivedQty = parseFloat(item.quantity_received_current) || 0;
+        const quantity = String(receivedQty); // Total quantity received
 
         return {
           ...EMPTY_ROW(),
           product_knowledge_name: item.drug_name,
           batch_number: item.batch_no,
           expiry_date: expiryDate,
-          quantity: item.quantity_received_current,
-          pack_size: parseInt(item.unit_pack) || 1,
-          pack_qty: 1,
-          is_new_batch: true, // Mark as new batch since we're importing from inward
+          pack_size: packSize,
+          pack_qty: receivedQty,
+          quantity: quantity,
+          accepted_pack_qty: receivedQty,
+          accepted_qty: String(packSize * receivedQty),
+          is_new_batch: true,
         } as RowItem;
       });
-
       setRows(newRows);
       setPrefillError("");
     } catch (err) {
@@ -1148,10 +679,6 @@ export default function AddSupplyDeliveryForm({
         toast.error(`Row ${n}: Expiry date required`);
         return false;
       }
-      if (!row.charge_item_category_slug) {
-        toast.error(`Row ${n}: Category required`);
-        return false;
-      }
     }
     return true;
   }
@@ -1162,6 +689,7 @@ export default function AddSupplyDeliveryForm({
       return;
     }
     if (!validate()) return;
+
     setIsProcessing(true);
     let successCount = 0;
 
@@ -1173,7 +701,6 @@ export default function AddSupplyDeliveryForm({
         if (!productId || row.is_new_batch) {
           const ci = await createChargeItem({
             slug_value: crypto.randomUUID(),
-            category: row.charge_item_category_slug,
             title: `${row.product_knowledge_name} - ${row.batch_number}`,
             status: "active",
             can_edit_charge_item: false,
@@ -1223,7 +750,6 @@ export default function AddSupplyDeliveryForm({
     }
   }
 
-  // Show loading state while fetching inward record
   if (inwardRecordId && isLoadingInward) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -1235,7 +761,6 @@ export default function AddSupplyDeliveryForm({
     );
   }
 
-  // Show error if prefill failed
   if (prefillError) {
     return (
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
@@ -1274,7 +799,7 @@ export default function AddSupplyDeliveryForm({
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-100">
             <tr className="divide-x divide-gray-200">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[180px]">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[180px] w-full">
                 Product
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
@@ -1283,17 +808,17 @@ export default function AddSupplyDeliveryForm({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
                 Expiry
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[140px]">
-                Category
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-20">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
                 Pack Size
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
                 Pack Qty
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-20">
-                Qty
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
+                Accepted Pack Qty
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
+                Accepted Qty
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
                 Actions
@@ -1313,7 +838,6 @@ export default function AddSupplyDeliveryForm({
           </tbody>
         </table>
       </div>
-
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <Button
