@@ -8,6 +8,11 @@
  * - Added useEffect to fetch inward record data and auto-populate rows
  * - Maps inward items to delivery rows with batch, expiry, quantity
  * - Handles product knowledge lookup and category selection
+ * - Added quantity_in_units field for E-Aushadhi display
+ * - Updated column widths for consistency
+ * - INTEGRATED PRODUCT MAPPINGS API
+ * - Added dropdown selector for product mappings with eAushadhi drug name display
+ * - Fetches mappings from /api/care_eaushadhi/product-mappings/ endpoint on page load
  */
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -36,6 +41,13 @@ interface ProductKnowledge {
   name: string;
   base_unit?: { code: string; display: string };
   category?: { id: string; slug: string; title: string };
+}
+
+interface ProductMapping {
+  id: string;
+  eaushadhi_drug_id: string;
+  eaushadhi_drug_name: string;
+  product_knowledge: ProductKnowledge;
 }
 
 interface ChargeItemDefinition {
@@ -74,7 +86,10 @@ interface RowItem {
   pack_qty: number;
   quantity: string;
   accepted_pack_qty: number;
-  accepted_qty: string;
+  accepted_qty_in_units: string;
+  quantity_in_units: string;
+  eaushadhi_drug_name?: string;
+  product_mapping_id?: string;
 }
 
 interface InwardItem {
@@ -84,6 +99,8 @@ interface InwardItem {
   expiry_date: string;
   quantity_received_current: string;
   unit_pack: string;
+  quantity_in_units?: string;
+  eaushadhi_drug_id?: string;
 }
 
 interface InwardRecord {
@@ -104,107 +121,47 @@ const EMPTY_ROW = (): RowItem => ({
   pack_qty: 1,
   quantity: "1",
   accepted_pack_qty: 1,
-  accepted_qty: "1",
+  accepted_qty_in_units: "1",
+  quantity_in_units: "",
+  eaushadhi_drug_name: "",
+  product_mapping_id: "",
 });
 
-// ─── Product Knowledge Selector ────────────────────────────────────────────
-interface ProductKnowledgeSelectorProps {
-  facilityId: string;
+// ─── Product Mapping Selector ──────────────────────────────────────────────
+interface ProductMappingSelectorProps {
   value: string;
   label: string;
-  onSelect: (pk: ProductKnowledge) => void;
+  eaushadhiDrugName?: string;
+  mappings: ProductMapping[];
+  isLoadingMappings: boolean;
+  onSelect: (mapping: ProductMapping) => void;
 }
 
-function ProductKnowledgeSelector({
-  facilityId,
+function ProductMappingSelector({
   value,
   label,
+  eaushadhiDrugName,
+  mappings,
+  isLoadingMappings,
   onSelect,
-}: ProductKnowledgeSelectorProps) {
+}: ProductMappingSelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [breadcrumbs, setBreadcrumbs] = useState<
-    { slug: string; title: string }[]
-  >([]);
-  const [currentParent, setCurrentParent] = useState<string | undefined>(
-    undefined,
-  );
 
-  const { data: catData, isLoading: isLoadingCats } = useQuery({
-    queryKey: ["pk-categories", facilityId, currentParent],
-    queryFn: () =>
-      request<{
-        results: {
-          id: string;
-          slug: string;
-          title: string;
-          description?: string;
-        }[];
-      }>(`/api/v1/facility/${facilityId}/resource_category/`, HttpMethod.GET, {
-        resource_type: "product_knowledge",
-        parent: currentParent || "",
-        limit: 100,
-      }),
-    enabled: open,
-  });
+  const filteredMappings = search
+    ? mappings.filter((m) =>
+        m.eaushadhi_drug_name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : mappings;
 
-  const { data: pkData, isLoading: isLoadingPK } = useQuery({
-    queryKey: ["pk-items", facilityId, currentParent, search],
-    queryFn: () =>
-      request<{ results: ProductKnowledge[] }>(
-        `/api/v1/product_knowledge/`,
-        HttpMethod.GET,
-        {
-          facility: facilityId,
-          status: "active",
-          include_instance: true,
-          ...(currentParent ? { category: currentParent } : {}),
-          ...(search ? { name: search } : {}),
-          limit: 100,
-        },
-      ),
-    enabled: open && (!!currentParent || !!search),
-  });
-
-  const categories = catData?.results ?? [];
-  const items = pkData?.results ?? [];
-  const isLoading = isLoadingCats || isLoadingPK;
-
-  const resetNav = () => {
-    setBreadcrumbs([]);
-    setCurrentParent(undefined);
-    setSearch("");
-  };
-
-  const handleCategorySelect = (slug: string, title: string) => {
-    setBreadcrumbs((prev) => [...prev, { slug, title }]);
-    setCurrentParent(slug);
-    setSearch("");
-  };
-
-  const handleBreadcrumb = (index: number) => {
-    const nb = breadcrumbs.slice(0, index + 1);
-    setBreadcrumbs(nb);
-    setCurrentParent(nb[index]?.slug);
-    setSearch("");
-  };
-
-  const handleSelect = (pk: ProductKnowledge) => {
-    onSelect(pk);
+  const handleSelect = (mapping: ProductMapping) => {
+    onSelect(mapping);
     setOpen(false);
-    resetNav();
+    setSearch("");
   };
-
-  const getCurrentLevelTitle = () => {
-    if (breadcrumbs.length === 0) return "Root";
-    return breadcrumbs[breadcrumbs.length - 1].title;
-  };
-
-  const showCategories = !search && !currentParent && categories.length > 0;
-  const showItems = !!search || !!currentParent;
 
   return (
-    <div className="relative w-45">
+    <div className="relative w-full">
       <button
         type="button"
         className="flex items-center border border-gray-300 rounded-md h-9 px-3 cursor-pointer hover:border-gray-400 bg-white transition-colors w-full shadow-xs"
@@ -216,7 +173,7 @@ function ProductKnowledgeSelector({
             !label ? "text-gray-500" : "text-gray-900",
           ].join(" ")}
         >
-          {label || "Select product knowledge"}
+          {label || "Select product mapping"}
         </span>
         <ChevronDown
           className={[
@@ -225,63 +182,20 @@ function ProductKnowledgeSelector({
           ].join(" ")}
         />
       </button>
+
       {open && (
         <>
           <div
             className="fixed inset-0 z-100"
             onClick={() => {
               setOpen(false);
-              resetNav();
+              setSearch("");
             }}
           />
           <div
-            className="absolute bottom-full left-0 z-20 w-[420px] bg-white border border-gray-200 rounded-md shadow-lg mb-1 flex flex-col"
-            style={{ maxHeight: "40vh" }}
+            className="absolute top-full left-0 z-20 bg-white border border-gray-200 rounded-md shadow-lg mt-1 flex flex-col"
+            style={{ maxHeight: "40vh", minWidth: "400px" }}
           >
-            <div className="px-4 py-2.5 border-b bg-gray-50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Home className="size-4 text-gray-500" />
-                <span className="text-sm font-medium text-gray-600">
-                  {getCurrentLevelTitle()}
-                </span>
-              </div>
-              {value && (
-                <button
-                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
-                  onClick={() => {
-                    onSelect({ id: "", slug: "", name: "" });
-                    setOpen(false);
-                    resetNav();
-                  }}
-                >
-                  <X className="size-3" /> Clear
-                </button>
-              )}
-            </div>
-            {breadcrumbs.length > 0 && (
-              <div className="px-3 py-1.5 border-b bg-gray-100 flex items-center gap-1 text-xs overflow-x-auto shrink-0">
-                <button
-                  className="text-gray-500 hover:text-gray-700 flex items-center gap-0.5 shrink-0"
-                  onClick={resetNav}
-                >
-                  <Home className="size-3" /> Root
-                </button>
-                {breadcrumbs.map((b, i) => (
-                  <span
-                    key={b.slug}
-                    className="flex items-center gap-1 shrink-0"
-                  >
-                    <ChevronRight className="size-3 text-gray-400" />
-                    <button
-                      className="text-gray-600 hover:text-gray-900 px-1"
-                      onClick={() => handleBreadcrumb(i)}
-                    >
-                      {b.title}
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
             <div className="px-3 border-b shrink-0">
               <div className="flex items-center gap-2 h-9">
                 <Search className="size-4 text-gray-400 shrink-0" />
@@ -289,13 +203,14 @@ function ProductKnowledgeSelector({
                   autoFocus
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search product knowledge"
+                  placeholder="Search by eAushadhi drug name"
                   className="flex-1 text-sm border-0 outline-none bg-transparent"
                 />
               </div>
             </div>
+
             <div className="overflow-y-auto flex-1">
-              {isLoading ? (
+              {isLoadingMappings ? (
                 <div className="p-6 space-y-3">
                   {[1, 2, 3].map((i) => (
                     <div
@@ -307,72 +222,48 @@ function ProductKnowledgeSelector({
                     </div>
                   ))}
                 </div>
-              ) : showCategories ? (
-                categories.map((cat) => (
+              ) : filteredMappings.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <Search className="size-8 mx-auto mb-2 opacity-50" />
+                  <div className="text-sm">
+                    {search
+                      ? `No results for "${search}"`
+                      : "No mappings found"}
+                  </div>
+                </div>
+              ) : (
+                filteredMappings.map((mapping) => (
                   <button
-                    key={cat.id}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 cursor-pointer transition-colors"
-                    onClick={() => handleCategorySelect(cat.slug, cat.title)}
+                    key={mapping.id}
+                    className={[
+                      "w-full flex flex-col gap-1 p-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 cursor-pointer transition-colors",
+                      value === mapping.id ? "bg-gray-50" : "",
+                    ].join(" ")}
+                    onClick={() => handleSelect(mapping)}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FolderOpen className="size-4 text-gray-500 shrink-0" />
+                    <div className="flex items-center justify-between">
                       <span className="text-sm font-medium truncate">
-                        {cat.title}
+                        {mapping.product_knowledge.name}
                       </span>
+                      {value === mapping.id && (
+                        <Check className="size-4 text-gray-700 shrink-0" />
+                      )}
                     </div>
-                    <ChevronRight className="size-4 text-gray-500 shrink-0" />
+                    <span className="text-xs text-gray-500">
+                      eAushadhi: {mapping.eaushadhi_drug_name}
+                    </span>
                   </button>
                 ))
-              ) : showItems ? (
-                items.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">
-                    <Search className="size-8 mx-auto mb-2 opacity-50" />
-                    <div className="text-sm">
-                      {search ? `No results for "${search}"` : "No items found"}
-                    </div>
-                  </div>
-                ) : (
-                  items.map((pk) => (
-                    <button
-                      key={pk.id}
-                      className={[
-                        "w-full flex items-center justify-between p-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 cursor-pointer transition-colors",
-                        value === pk.slug ? "bg-gray-50" : "",
-                      ].join(" ")}
-                      onClick={() => handleSelect(pk)}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="text-sm font-medium truncate">
-                          {pk.name}
-                        </span>
-                        {search && pk.category && (
-                          <span className="text-xs text-gray-400 truncate">
-                            {pk.category.title}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {pk.base_unit && (
-                          <span className="text-xs text-gray-400">
-                            {pk.base_unit.display}
-                          </span>
-                        )}
-                        {value === pk.slug && (
-                          <Check className="size-4 text-gray-700" />
-                        )}
-                      </div>
-                    </button>
-                  ))
-                )
-              ) : (
-                <div className="p-6 text-center text-gray-500">
-                  <FolderOpen className="size-8 mx-auto mb-2 opacity-50" />
-                  <div className="text-sm">No categories found</div>
-                </div>
               )}
             </div>
           </div>
         </>
+      )}
+
+      {eaushadhiDrugName && (
+        <div className="mt-1.5 text-xs text-gray-500">
+          eAushadhi: {eaushadhiDrugName}
+        </div>
       )}
     </div>
   );
@@ -382,11 +273,20 @@ function ProductKnowledgeSelector({
 interface RowProps {
   facilityId: string;
   row: RowItem;
+  mappings: ProductMapping[];
+  isLoadingMappings: boolean;
   onChange: (updated: RowItem) => void;
   onRemove: () => void;
 }
 
-function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
+function DeliveryRow({
+  facilityId,
+  row,
+  mappings,
+  isLoadingMappings,
+  onChange,
+  onRemove,
+}: RowProps) {
   const set = useCallback(
     (field: keyof RowItem, value: unknown) =>
       onChange({ ...row, [field]: value } as RowItem),
@@ -406,20 +306,22 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
   // Auto accepted qty = pack_size × accepted_pack_qty
   useEffect(() => {
     const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
-    if (String(acceptedQty) !== row.accepted_qty) {
-      onChange({ ...row, accepted_qty: String(acceptedQty) });
+    if (String(acceptedQty) !== row.accepted_qty_in_units) {
+      onChange({ ...row, accepted_qty_in_units: String(acceptedQty) });
     }
   }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
 
-  const handleSelectPK = (pk: ProductKnowledge) => {
+  const handleSelectMapping = (mapping: ProductMapping) => {
     queryClient.removeQueries({
-      queryKey: ["products-autofill", facilityId, pk.id],
+      queryKey: ["products-autofill", facilityId, mapping.product_knowledge.id],
     });
     onChange({
       ...EMPTY_ROW(),
-      product_knowledge_id: pk.id,
-      product_knowledge_slug: pk.slug,
-      product_knowledge_name: pk.name,
+      product_knowledge_id: mapping.product_knowledge.id,
+      product_knowledge_slug: mapping.product_knowledge.slug,
+      product_knowledge_name: mapping.product_knowledge.name,
+      eaushadhi_drug_name: mapping.eaushadhi_drug_name,
+      product_mapping_id: mapping.id,
     });
   };
 
@@ -460,6 +362,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
   useEffect(() => {
     const product = autoFillData?.results?.[0];
     if (!product || row.is_new_batch || row.batch_number) return;
+
     const ci = product.charge_item_definition;
     const packSize = product.standard_pack_size ?? 1;
     onChange({
@@ -486,15 +389,17 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
 
   return (
     <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
-      <td className="px-2 py-2 w-full">
-        <ProductKnowledgeSelector
-          facilityId={facilityId}
-          value={row.product_knowledge_slug}
+      <td className="px-2 py-2 flex-1">
+        <ProductMappingSelector
+          value={row.product_mapping_id || ""}
           label={row.product_knowledge_name}
-          onSelect={handleSelectPK}
+          eaushadhiDrugName={row.eaushadhi_drug_name}
+          mappings={mappings}
+          isLoadingMappings={isLoadingMappings}
+          onSelect={handleSelectMapping}
         />
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <Input
           type="text"
           value={row.batch_number}
@@ -503,7 +408,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs min-w-[10rem]"
         />
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <Input
           type="date"
           value={row.expiry_date}
@@ -512,7 +417,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs min-w-[10rem]"
         />
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <Input
           type="number"
           min={1}
@@ -522,7 +427,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs w-20"
         />
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <Input
           type="number"
           min={1}
@@ -532,7 +437,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs w-24"
         />
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <Input
           type="number"
           min={0}
@@ -543,15 +448,22 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
           className="h-9 text-xs w-32"
         />
       </td>
-      <td className="px-2 py-2">
-        <Input
-          type="number"
-          value={row.accepted_qty}
-          disabled
-          className="h-9 text-xs bg-gray-100 text-gray-600 w-24"
-        />
+      <td className="px-2 py-2 shrink-0">
+        <div className="flex flex-col gap-1">
+          <Input
+            type="number"
+            value={row.accepted_qty_in_units}
+            disabled
+            className="h-9 text-xs bg-gray-100 text-gray-600 w-32"
+          />
+          {row.quantity_in_units && (
+            <span className="text-xs text-gray-500">
+              Original Qty: {row.quantity_in_units}
+            </span>
+          )}
+        </div>
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-2 shrink-0">
         <button
           onClick={onRemove}
           className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
@@ -577,11 +489,24 @@ export default function AddSupplyDeliveryForm({
   deliveryOrderId,
   destination,
   onSuccess,
-  inwardRecordId,
+  inwardRecordId: propInwardRecordId,
 }: Props) {
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
+  const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
+
+  // Extract inward_record_id from URL query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("inward_record_id");
+    if (id) {
+      setUrlInwardRecordId(id);
+    }
+  }, []);
+
+  // Use URL param if available, otherwise use prop
+  const inwardRecordId = urlInwardRecordId || propInwardRecordId;
 
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
@@ -592,6 +517,22 @@ export default function AddSupplyDeliveryForm({
   }, []);
 
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
+
+  // Fetch product mappings on page load
+  const { data: mappingsData, isLoading: isLoadingMappings } = useQuery({
+    queryKey: ["product-mappings", facilityId, inwardRecordId],
+    queryFn: () =>
+      request<{
+        results: ProductMapping[];
+      }>(`/api/care_eaushadhi/product-mappings/`, HttpMethod.GET, {
+        facility_id: facilityId,
+        inward_record_id: inwardRecordId,
+        limit: 100,
+      }),
+    enabled: !!inwardRecordId,
+  });
+
+  const mappings = mappingsData?.results ?? [];
 
   // Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
@@ -608,6 +549,7 @@ export default function AddSupplyDeliveryForm({
     if (!inwardRecord?.items || inwardRecord.items.length === 0) {
       return;
     }
+
     try {
       const newRows = inwardRecord.items.map((item) => {
         const expiryDate = item.expiry_date
@@ -627,10 +569,14 @@ export default function AddSupplyDeliveryForm({
           pack_qty: receivedQty,
           quantity: quantity,
           accepted_pack_qty: receivedQty,
-          accepted_qty: String(packSize * receivedQty),
+          accepted_qty_in_units: String(packSize * receivedQty),
+          quantity_in_units: item.quantity_in_units
+            ? String(Math.floor(parseFloat(item.quantity_in_units)))
+            : "",
           is_new_batch: true,
         } as RowItem;
       });
+
       setRows(newRows);
       setPrefillError("");
     } catch (err) {
@@ -709,6 +655,7 @@ export default function AddSupplyDeliveryForm({
             ],
             discount_configuration: null,
           });
+
           chargeItemSlug = ci.slug;
 
           const prod = await createProduct({
@@ -720,6 +667,7 @@ export default function AddSupplyDeliveryForm({
             standard_pack_size: row.pack_size,
             extensions: {},
           });
+
           productId = prod.id;
         }
 
@@ -735,6 +683,7 @@ export default function AddSupplyDeliveryForm({
           order: deliveryOrderId,
           extensions: {},
         });
+
         successCount++;
       } catch (err) {
         console.error(err);
@@ -799,7 +748,7 @@ export default function AddSupplyDeliveryForm({
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-100">
             <tr className="divide-x divide-gray-200">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[180px] w-full">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 flex-1">
                 Product
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
@@ -817,8 +766,8 @@ export default function AddSupplyDeliveryForm({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
                 Accepted Pack Qty
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                Accepted Qty
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
+                Qty In Units
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
                 Actions
@@ -831,6 +780,8 @@ export default function AddSupplyDeliveryForm({
                 key={index}
                 facilityId={facilityId}
                 row={row}
+                mappings={mappings}
+                isLoadingMappings={isLoadingMappings}
                 onChange={(updated) => updateRow(index, updated)}
                 onRemove={() => removeRow(index)}
               />
@@ -838,6 +789,7 @@ export default function AddSupplyDeliveryForm({
           </tbody>
         </table>
       </div>
+
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <Button
