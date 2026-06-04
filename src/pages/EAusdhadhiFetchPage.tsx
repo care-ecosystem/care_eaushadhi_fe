@@ -7,19 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 
 interface Props {
-    facilityId: string;
-    locationId: string;
-    deliveryOrderId?: string;
+  facilityId: string;
+  locationId: string;
+  deliveryOrderId?: string;
 }
 
 interface SupplierMapping {
@@ -62,7 +62,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
     const [note, setNote] = useState("");
     const [inwardDate] = useState(getTodayFormatted());
 
-    const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
+  const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
 
     const { data: instituteMappingData } = useQuery({
@@ -117,10 +117,17 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
                 `/facility/${facilityId}/locations/${locationId}/eaushadhi/${data.id}`,
             );
         },
-        onError: () => {
-            toast.error("Failed to create delivery order");
-        },
-    });
+      ),
+    onSuccess: (data: any) => {
+      toast.success("Delivery order created successfully");
+      navigate(
+        `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${inwardDate}`,
+      );
+    },
+    onError: () => {
+      toast.error("Failed to create delivery order");
+    },
+  });
 
     return (
         <div className="container mx-auto max-w-5xl px-4 py-6">

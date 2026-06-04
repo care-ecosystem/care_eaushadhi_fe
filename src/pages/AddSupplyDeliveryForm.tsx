@@ -487,6 +487,11 @@ function ProductKnowledgeSelector({
             ),
         enabled: open && (!!currentParent || !!search),
     });
+  };
+
+  const handleSelectExisting = (product: Product) => {
+    const ci = product.charge_item_definition;
+    const packSize = product.standard_pack_size ?? 1;
 
     const categories = catData?.results ?? [];
     const items = pkData?.results ?? [];
@@ -837,11 +842,153 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
         mutationFn: (data: Record<string, unknown>) =>
             request<{ id: string; slug: string }>(`/api/v1/facility/${facilityId}/charge_item_definition/`, HttpMethod.POST, data),
     });
+  };
+
+  const { data: autoFillData } = useQuery({
+    queryKey: ["products-autofill", facilityId, row.product_knowledge_id],
+    queryFn: () =>
+      request<{ results: Product[] }>(
+        `/api/v1/facility/${facilityId}/product/`,
+        HttpMethod.GET,
+        {
+          product_knowledge: row.product_knowledge_id,
+          ordering: "-created_date",
+          limit: 1,
+          status: "active",
+        },
+      ),
+    enabled: !!row.product_knowledge_id,
+  });
+
+  useEffect(() => {
+    const product = autoFillData?.results?.[0];
+    if (!product || row.is_new_batch || row.batch_number) return;
 
     const { mutateAsync: createProduct } = useMutation({
         mutationFn: (data: Record<string, unknown>) =>
             request<{ id: string }>(`/api/v1/facility/${facilityId}/product/`, HttpMethod.POST, data),
     });
+  }, [autoFillData]); // eslint-disable-line
+
+  const isProductSelected = !!row.product_knowledge_slug;
+  const showCategoryPicker =
+    isProductSelected && (row.is_new_batch || !row.charge_item_category_slug);
+
+  return (
+    <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
+      {/* Product */}
+      <td className="px-2 py-2">
+        <ProductKnowledgeSelector
+          facilityId={facilityId}
+          value={row.product_knowledge_slug}
+          label={row.product_knowledge_name}
+          onSelect={handleSelectPK}
+        />
+      </td>
+
+      {/* Batch */}
+      <td className="px-2 py-2">
+        <BatchSelector
+          facilityId={facilityId}
+          productKnowledgeId={row.product_knowledge_id}
+          batchNumber={row.batch_number}
+          suppliedItemId={row.supplied_item_id}
+          productKnowledgeSlug={row.product_knowledge_slug}
+          isNewBatch={row.is_new_batch}
+          onBatchInput={(v) => set("batch_number", v)}
+          onSelectExisting={handleSelectExisting}
+          onMarkAsNew={() =>
+            onChange({
+              ...row,
+              supplied_item_id: "",
+              is_new_batch: true,
+              charge_item_definition_slug: "",
+            })
+          }
+          disabled={!isProductSelected}
+        />
+      </td>
+
+      {/* Expiry */}
+      <td className="px-2 py-2">
+        <Input
+          type="date"
+          value={row.expiry_date}
+          onChange={(e) => set("expiry_date", e.target.value)}
+          disabled={!isProductSelected}
+          className="h-9 text-xs min-w-[10rem]"
+        />
+      </td>
+
+      {/* Category */}
+      <td className="px-2 py-2">
+        {showCategoryPicker ? (
+          <CategoryPicker
+            facilityId={facilityId}
+            value={row.charge_item_category_slug}
+            label={row.charge_item_category_title}
+            onChange={(slug, title) =>
+              onChange({
+                ...row,
+                charge_item_category_slug: slug,
+                charge_item_category_title: title,
+              })
+            }
+            disabled={!isProductSelected}
+          />
+        ) : (
+          <span className="text-xs text-gray-600 px-1">
+            {row.charge_item_category_title || "—"}
+          </span>
+        )}
+      </td>
+
+      {/* Pack Size */}
+      <td className="px-2 py-2">
+        <Input
+          type="number"
+          min={1}
+          value={row.pack_size}
+          onChange={(e) => set("pack_size", parseInt(e.target.value) || 1)}
+          disabled={!isProductSelected}
+          className="h-9 text-xs w-20"
+        />
+      </td>
+
+      {/* Pack Qty */}
+      <td className="px-2 py-2">
+        <Input
+          type="number"
+          min={1}
+          value={row.pack_qty}
+          onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
+          disabled={!isProductSelected}
+          className="h-9 text-xs w-[6rem]"
+        />
+      </td>
+
+      {/* Qty (auto) */}
+      <td className="px-2 py-2">
+        <Input
+          type="number"
+          value={row.quantity}
+          disabled
+          className="h-9 text-xs w-20 bg-gray-100 text-gray-600"
+        />
+      </td>
+
+      {/* Delete */}
+      <td className="px-2 py-2">
+        <button
+          onClick={onRemove}
+          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </td>
+    </tr>
+  );
+}
 
     const { mutateAsync: createSupplyDelivery } = useMutation({
         mutationFn: (data: Record<string, unknown>) =>
@@ -858,6 +1005,8 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
         }
         return true;
     }
+    return true;
+  }
 
     async function handleSave() {
         if (rows.length === 0) { toast.error("Add at least one item"); return; }
@@ -913,6 +1062,24 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
             setRows([]);
             onSuccess();
         }
+
+        await createSupplyDelivery({
+          status: "in_progress",
+          supplied_item_type: "product",
+          supplied_item_condition: "normal",
+          supplied_item_quantity: row.quantity,
+          supplied_item: productId,
+          supplied_item_pack_quantity: row.pack_qty,
+          supplied_item_pack_size: row.pack_size,
+          destination,
+          order: deliveryOrderId,
+          extensions: {},
+        });
+        successCount++;
+      } catch (err) {
+        console.error(err);
+        toast.error(`Failed to save: ${row.product_knowledge_name}`);
+      }
     }
 
     if (rows.length === 0) {
@@ -926,7 +1093,10 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
             </div>
         );
     }
+  }
 
+  // Show loading state while fetching inward record
+  if (inwardRecordId && isLoadingInward) {
     return (
         <div className="space-y-4">
             <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
@@ -970,5 +1140,100 @@ export default function AddSupplyDeliveryForm({ facilityId, deliveryOrderId, des
                 </div>
             </div>
         </div>
+      </div>
     );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <p className="text-sm font-medium text-gray-700">
+          Add items to this delivery
+        </p>
+        <p className="text-xs text-gray-500">
+          Add products that are being delivered
+        </p>
+        <Button
+          variant="outline"
+          onClick={addRow}
+          className="flex items-center gap-2"
+        >
+          <PlusCircle className="size-4" /> Add Item
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
+        <table className="w-full text-sm border-collapse">
+          <thead className="bg-gray-100">
+            <tr className="divide-x divide-gray-200">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[180px]">
+                Product
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
+                Batch
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
+                Expiry
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[140px]">
+                Category
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-20">
+                Pack Size
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
+                Pack Qty
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-20">
+                Qty
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((row, index) => (
+              <DeliveryRow
+                key={index}
+                facilityId={facilityId}
+                row={row}
+                onChange={(updated) => updateRow(index, updated)}
+                onRemove={() => removeRow(index)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Button
+          variant="outline"
+          onClick={addRow}
+          className="flex items-center gap-2"
+        >
+          <PlusCircle className="size-4" /> Add Another
+        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setRows([])}
+            disabled={isProcessing}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={isProcessing}>
+            {isProcessing ? "Saving..." : "Save"}
+            <span className="ml-1.5 text-[10px] bg-green-800 border border-green-700 rounded px-1.5 py-0.5 font-mono">
+              ⇧ ENTER
+            </span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
