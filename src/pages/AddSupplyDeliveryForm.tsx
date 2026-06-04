@@ -23,12 +23,14 @@ import {
   X,
   AlertCircle,
 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
+import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { buildRowDeliveryBatch } from "@/apis/index";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -108,6 +110,7 @@ interface RowItem {
   quantity: string;
   tax_components: MonetaryComponent[];
   discount_components: MonetaryComponent[];
+  record_item_id: string;
 }
 
 interface InwardItem {
@@ -146,6 +149,7 @@ const EMPTY_ROW = (): RowItem => ({
   quantity: "1",
   tax_components: [],
   discount_components: [],
+  record_item_id: "",
 });
 
 interface Props {
@@ -154,6 +158,7 @@ interface Props {
   destination: string;
   onSuccess: () => void;
   inwardRecordId?: string;
+  recordDeliveryId?: string;
 }
 
 interface CategoryPickerProps {
@@ -845,6 +850,7 @@ function DeliveryRow({ facilityId, row, onChange, onRemove }: RowProps) {
     });
     onChange({
       ...EMPTY_ROW(),
+      record_item_id: row.record_item_id,
       product_knowledge_id: pk.id,
       product_knowledge_slug: pk.slug,
       product_knowledge_name: pk.name,
@@ -1047,6 +1053,7 @@ export default function AddSupplyDeliveryForm({
   destination,
   onSuccess,
   inwardRecordId,
+  recordDeliveryId,
 }: Props) {
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -1090,6 +1097,7 @@ export default function AddSupplyDeliveryForm({
 
         return {
           ...EMPTY_ROW(),
+          record_item_id: item.id,
           product_knowledge_name: item.drug_name,
           batch_number: item.batch_no,
           expiry_date: expiryDate,
@@ -1110,28 +1118,7 @@ export default function AddSupplyDeliveryForm({
     }
   }, [inwardRecord]);
 
-  const { mutateAsync: createChargeItem } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      request<{ id: string; slug: string }>(
-        `/api/v1/facility/${facilityId}/charge_item_definition/`,
-        HttpMethod.POST,
-        data,
-      ),
-  });
-
-  const { mutateAsync: createProduct } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      request<{ id: string }>(
-        `/api/v1/facility/${facilityId}/product/`,
-        HttpMethod.POST,
-        data,
-      ),
-  });
-
-  const { mutateAsync: createSupplyDelivery } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      request(`/api/v1/supply_delivery/`, HttpMethod.POST, data),
-  });
+  const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
   function validate(): boolean {
     for (const [i, row] of rows.entries()) {
@@ -1152,66 +1139,66 @@ export default function AddSupplyDeliveryForm({
         toast.error(`Row ${n}: Category required`);
         return false;
       }
+      if (!row.record_item_id) {
+        toast.error(`Row ${n}: missing inward item reference`);
+        return false;
+      }
     }
     return true;
   }
 
   async function handleSave() {
+    console.log("SUPER BATCH SAVE v2"); // temporary marker — remove after verifying
     if (rows.length === 0) {
       toast.error("Add at least one item");
       return;
     }
+    if (!recordDeliveryId) {
+      toast.error("Missing record delivery reference");
+      return;
+    }
     if (!validate()) return;
+
     setIsProcessing(true);
     let successCount = 0;
 
     for (const row of rows) {
       try {
-        let productId = row.supplied_item_id;
-        let chargeItemSlug = row.charge_item_definition_slug;
+        const payload = buildRowDeliveryBatch(
+          {
+            productKnowledgeSlug: row.product_knowledge_slug,
+            productKnowledgeName: row.product_knowledge_name,
+            chargeItemCategorySlug: row.charge_item_category_slug,
+            batchNumber: row.batch_number,
+            expiryDate: row.expiry_date,
+            packSize: row.pack_size,
+            packQty: row.pack_qty,
+            quantity: row.quantity,
+            purchasePrice: row.purchase_price || "0",
+            recordItemId: row.record_item_id,
+            existingProductId: row.supplied_item_id || undefined,
+            isNewBatch: row.is_new_batch,
+          },
+          {
+            facilityId,
+            destination,
+            deliveryOrderId,
+            recordDeliveryId,
+            eaushadhiProductKnowledgeId: row.product_knowledge_id,
+          },
+        );
 
-        if (!productId || row.is_new_batch) {
-          const ci = await createChargeItem({
-            slug_value: crypto.randomUUID(),
-            category: row.charge_item_category_slug,
-            title: `${row.product_knowledge_name} - ${row.batch_number}`,
-            status: "active",
-            can_edit_charge_item: false,
-            price_components: [
-              { monetary_component_type: "base", amount: "0" },
-            ],
-            discount_configuration: null,
-          });
-          chargeItemSlug = ci.slug;
-
-          const prod = await createProduct({
-            status: "active",
-            batch: { lot_number: row.batch_number },
-            expiration_date: row.expiry_date,
-            product_knowledge: row.product_knowledge_slug,
-            charge_item_definition: chargeItemSlug,
-            standard_pack_size: row.pack_size,
-            extensions: {},
-          });
-          productId = prod.id;
-        }
-
-        await createSupplyDelivery({
-          status: "in_progress",
-          supplied_item_type: "product",
-          supplied_item_condition: "normal",
-          supplied_item_quantity: row.quantity,
-          supplied_item: productId,
-          supplied_item_pack_quantity: row.pack_qty,
-          supplied_item_pack_size: row.pack_size,
-          destination,
-          order: deliveryOrderId,
-          extensions: {},
-        });
+        await runSuperBatch(payload); // one POST to /api/super_batch_request/
         successCount++;
       } catch (err) {
+        const f = (err as SuperBatchError)?.failed?.[0];
+        const detail =
+          (f?.data as any)?.errors?.[0]?.msg ??
+          (f?.data as any)?.detail ??
+          f?.status_code ??
+          "save failed";
         console.error(err);
-        toast.error(`Failed to save: ${row.product_knowledge_name}`);
+        toast.error(`Failed to save ${row.product_knowledge_name}: ${detail}`);
       }
     }
 
