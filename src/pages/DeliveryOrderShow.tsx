@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import AddSupplyDeliveryForm from "@/pages/AddSupplyDeliveryForm";
+import { navigateToDeliveryPrint } from "@/lib/utils";
 
 interface Props {
   facilityId: string;
@@ -328,7 +329,7 @@ export default function DeliveryOrderShow({
           {/* Print */}
           <Button
             variant="outline"
-            onClick={() => window.print()}
+            onClick={() => navigateToDeliveryPrint(facilityId, locationId, deliveryOrderId)}
             className="flex items-center gap-2"
           >
             <Printer className="size-4" /> Print
