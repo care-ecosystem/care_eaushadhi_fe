@@ -5,8 +5,8 @@
  * - Dynamic quantity calculations (pack size × quantity)
  */
 import { useState, useEffect, useCallback } from "react";
-import { Check, PlusCircle, Trash2, AlertCircle } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlusCircle, Trash2, AlertCircle } from "lucide-react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,17 +19,34 @@ import {
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
+import {
+  useSuperBatchRequest,
+  SuperBatchError,
+} from "@/apis/query";
+import {
+  RowDeliveryInput,
+  RowDeliveryBatchContext,
+} from "@/apis";
+import {
+  buildChainBatch,
+  chunkRows,
+  extractChainResults,
+  SUPER_BATCH_CHAIN_SIZE,
+} from "@/apis/chainBuilder";
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
   id: string;
   slug: string;
   name: string;
 }
+
 interface ProductMapping {
   id: string;
   eaushadhi_drug_name: string;
   product_knowledge: ProductKnowledge;
 }
+
 interface Product {
   id: string;
   batch?: { lot_number: string };
@@ -37,15 +54,17 @@ interface Product {
   standard_pack_size?: number;
   charge_item_definition?: { slug: string };
 }
+
 interface RowItem {
   product_knowledge_id: string;
   product_knowledge_slug: string;
   product_knowledge_name: string;
   supplied_item_id: string;
+  record_item_id: string;
+  charge_item_category_slug: string;
   batch_number: string;
   expiry_date: string;
   is_new_batch: boolean;
-  charge_item_definition_slug: string;
   pack_size: number;
   pack_qty: number;
   quantity: string;
@@ -55,7 +74,9 @@ interface RowItem {
   eaushadhi_drug_name?: string;
   product_mapping_id?: string;
 }
+
 interface InwardItem {
+  id: string;
   drug_name: string;
   batch_no: string;
   expiry_date: string;
@@ -63,18 +84,21 @@ interface InwardItem {
   unit_pack: string;
   quantity_in_units?: string;
 }
+
 interface InwardRecord {
   items: InwardItem[];
 }
+
 const EMPTY_ROW = (): RowItem => ({
   product_knowledge_id: "",
   product_knowledge_slug: "",
   product_knowledge_name: "",
   supplied_item_id: "",
+  record_item_id: "",
+  charge_item_category_slug: "",
   batch_number: "",
   expiry_date: "",
   is_new_batch: false,
-  charge_item_definition_slug: "",
   pack_size: 1,
   pack_qty: 1,
   quantity: "1",
@@ -84,6 +108,7 @@ const EMPTY_ROW = (): RowItem => ({
   eaushadhi_drug_name: "",
   product_mapping_id: "",
 });
+
 // ─── Product Mapping Selector ──────────────────────────────────────────────
 function ProductMappingSelector({
   value,
@@ -118,6 +143,7 @@ function ProductMappingSelector({
     </Select>
   );
 }
+
 // ─── Delivery Row ──────────────────────────────────────────────────────────
 function DeliveryRow({
   facilityId,
@@ -140,6 +166,7 @@ function DeliveryRow({
     [row, onChange],
   );
   const queryClient = useQueryClient();
+
   // Auto-calculate quantity from pack size and pack quantity
   useEffect(() => {
     const qty = (row.pack_size || 1) * (row.pack_qty || 1);
@@ -147,6 +174,7 @@ function DeliveryRow({
       onChange({ ...row, quantity: String(qty) });
     }
   }, [row.pack_size, row.pack_qty]); // eslint-disable-line
+
   // Auto-calculate accepted quantity
   useEffect(() => {
     const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
@@ -154,6 +182,7 @@ function DeliveryRow({
       onChange({ ...row, accepted_qty_in_units: String(acceptedQty) });
     }
   }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
+
   const handleSelectMapping = (mapping: ProductMapping) => {
     queryClient.removeQueries({
       queryKey: ["products-autofill", facilityId, mapping.product_knowledge.id],
@@ -164,9 +193,9 @@ function DeliveryRow({
       product_knowledge_slug: mapping.product_knowledge.slug,
       product_knowledge_name: mapping.product_knowledge.name,
       product_mapping_id: mapping.id,
-      // Keep the original eaushadhi_drug_name from inward record, don't override it
     });
   };
+
   const { data: autoFillData } = useQuery({
     queryKey: ["products-autofill", facilityId, row.product_knowledge_id],
     queryFn: () =>
@@ -182,10 +211,10 @@ function DeliveryRow({
       ),
     enabled: !!row.product_knowledge_id,
   });
+
   useEffect(() => {
     const product = autoFillData?.results?.[0];
     if (!product || row.is_new_batch || row.batch_number) return;
-    const ci = product.charge_item_definition;
     const packSize = product.standard_pack_size ?? 1;
     onChange({
       ...row,
@@ -195,7 +224,6 @@ function DeliveryRow({
         ? product.expiration_date.slice(0, 10)
         : "",
       is_new_batch: false,
-      charge_item_definition_slug: ci?.slug ?? "",
       pack_size: packSize,
       pack_qty: Math.max(
         1,
@@ -204,10 +232,11 @@ function DeliveryRow({
             packSize,
         ),
       ),
-      // Keep the original eaushadhi_drug_name from inward record
     });
   }, [autoFillData]); // eslint-disable-line
+
   const isProductSelected = !!row.product_knowledge_slug;
+
   return (
     <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
       <td className="px-2 py-2 min-w-[280px] max-w-[400px]">
@@ -300,6 +329,7 @@ function DeliveryRow({
     </tr>
   );
 }
+
 // ─── Main Form ─────────────────────────────────────────────────────────────
 export default function AddSupplyDeliveryForm({
   facilityId,
@@ -318,20 +348,27 @@ export default function AddSupplyDeliveryForm({
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
+
   // Extract inward_record_id from URL query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("inward_record_id");
     if (id) setUrlInwardRecordId(id);
   }, []);
+
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
+  const recordDeliveryId = "b50e5dc8-4a28-47d1-bcc7-7640e506f841";
+
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
   }, []);
+
   const removeRow = useCallback((index: number) => {
     setRows((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
+
   // Fetch product mappings
   const { data: mappingsData, isLoading: isLoadingMappings } = useQuery({
     queryKey: ["product-mappings", facilityId, inwardRecordId],
@@ -348,6 +385,7 @@ export default function AddSupplyDeliveryForm({
     enabled: !!inwardRecordId,
   });
   const mappings = mappingsData?.results ?? [];
+
   // Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
@@ -358,6 +396,7 @@ export default function AddSupplyDeliveryForm({
       ),
     enabled: !!inwardRecordId,
   });
+
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
     try {
@@ -369,6 +408,7 @@ export default function AddSupplyDeliveryForm({
         const receivedQty = parseFloat(item.quantity_received_current) || 0;
         return {
           ...EMPTY_ROW(),
+          record_item_id: item.id,
           product_knowledge_name: item.drug_name,
           batch_number: item.batch_no,
           expiry_date: expiryDate,
@@ -393,26 +433,23 @@ export default function AddSupplyDeliveryForm({
       );
     }
   }, [inwardRecord]);
-  const { mutateAsync: createChargeItem } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      request<{ id: string; slug: string }>(
-        `/api/v1/facility/${facilityId}/charge_item_definition/`,
-        HttpMethod.POST,
-        data,
-      ),
-  });
-  const { mutateAsync: createProduct } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
+
+  const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
+
+  // Mutation for recording deliveries in eAushadhi system
+  const { mutateAsync: recordDeliveries } = useMutation({
+    mutationFn: async (payload: {
+      inward_record_id: string;
+      facility_id: string;
+      delivery_order_id: string;
+    }) =>
       request<{ id: string }>(
-        `/api/v1/facility/${facilityId}/product/`,
+        `/api/care_eaushadhi/record-deliveries/`,
         HttpMethod.POST,
-        data,
+        payload,
       ),
   });
-  const { mutateAsync: createSupplyDelivery } = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      request(`/api/v1/supply_delivery/`, HttpMethod.POST, data),
-  });
+
   function validate(): boolean {
     for (const [i, row] of rows.entries()) {
       const n = i + 1;
@@ -431,66 +468,103 @@ export default function AddSupplyDeliveryForm({
     }
     return true;
   }
+
   async function handleSave() {
     if (rows.length === 0) {
       toast.error("Add at least one item");
       return;
     }
+
     if (!validate()) return;
+
     setIsProcessing(true);
-    let successCount = 0;
-    for (const row of rows) {
-      try {
-        let productId = row.supplied_item_id;
-        let chargeItemSlug = row.charge_item_definition_slug;
-        if (!productId || row.is_new_batch) {
-          const ci = await createChargeItem({
-            slug_value: crypto.randomUUID(),
-            title: `${row.product_knowledge_name} - ${row.batch_number}`,
-            status: "active",
-            can_edit_charge_item: false,
-            price_components: [
-              { monetary_component_type: "base", amount: "0" },
-            ],
-            discount_configuration: null,
-          });
-          chargeItemSlug = ci.slug;
-          const prod = await createProduct({
-            status: "active",
-            batch: { lot_number: row.batch_number },
-            expiration_date: row.expiry_date,
-            product_knowledge: row.product_knowledge_slug,
-            charge_item_definition: chargeItemSlug,
-            standard_pack_size: row.pack_size,
-            extensions: {},
-          });
-          productId = prod.id;
-        }
-        await createSupplyDelivery({
-          status: "in_progress",
-          supplied_item_type: "product",
-          supplied_item_condition: "normal",
-          supplied_item_quantity: row.quantity,
-          supplied_item: productId,
-          supplied_item_pack_quantity: row.pack_qty,
-          supplied_item_pack_size: row.pack_size,
-          destination,
-          order: deliveryOrderId,
-          extensions: {},
+
+    try {
+      // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
+      let finalRecordDeliveryId = recordDeliveryId;
+
+      if (inwardRecordId) {
+        const response = await recordDeliveries({
+          inward_record_id: inwardRecordId,
+          facility_id: facilityId,
+          delivery_order_id: deliveryOrderId,
         });
-        successCount++;
-      } catch (err) {
-        console.error(err);
-        toast.error(`Failed to save: ${row.product_knowledge_name}`);
+        finalRecordDeliveryId = response.id;
       }
-    }
-    setIsProcessing(false);
-    if (successCount > 0) {
-      toast.success(`${successCount} item(s) saved successfully`);
+
+      if (!finalRecordDeliveryId) {
+        toast.error("Missing record delivery reference");
+        return;
+      }
+
+      // Step 1: Convert RowItem[] to RowDeliveryInput[]
+      const deliveryInputs: RowDeliveryInput[] = rows.map((row) => ({
+        productKnowledgeSlug: row.product_knowledge_slug,
+        productKnowledgeName: row.product_knowledge_name,
+        chargeItemCategorySlug: row.charge_item_category_slug,
+        batchNumber: row.batch_number,
+        expiryDate: row.expiry_date,
+        packSize: row.pack_size,
+        packQty: row.pack_qty,
+        quantity: row.quantity,
+        purchasePrice: "0",
+        recordItemId: row.record_item_id,
+        existingProductId: row.supplied_item_id || undefined,
+        isNewBatch: row.is_new_batch,
+      }));
+
+      // Step 2: Split rows into chunks
+      const chunks = chunkRows(deliveryInputs);
+
+      // Step 3: Create shared context
+      const ctx: RowDeliveryBatchContext = {
+        facilityId,
+        destination,
+        deliveryOrderId,
+        recordDeliveryId: finalRecordDeliveryId,
+        eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
+      };
+
+      // Step 4: Process each chunk
+      for (const chunk of chunks) {
+        const payload = buildChainBatch(chunk, ctx);
+        const results = await runSuperBatch(payload);
+        const chainResults = extractChainResults(results);
+
+        // Check for errors
+        for (const result of chainResults) {
+          if (result.errors.length > 0) {
+            throw new Error(
+              `Chain ${result.chainId} failed: ${result.errors.join("; ")}`,
+            );
+          }
+        }
+      }
+
+      toast.success("Saved successfully");
       setRows([]);
       onSuccess();
+    } catch (err) {
+      if (err instanceof SuperBatchError) {
+        const firstError = err.failed?.[0];
+        toast.error(
+          `Failed: ${
+            (firstError?.data as any)?.detail ??
+            firstError?.status_code ??
+            "Unknown error"
+          }`,
+        );
+      } else if (err instanceof Error) {
+        toast.error(err.message);
+      } else {
+        console.error(err);
+        toast.error("Unexpected error");
+      }
+    } finally {
+      setIsProcessing(false);
     }
   }
+
   if (inwardRecordId && isLoadingInward) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -501,6 +575,7 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
+
   if (prefillError) {
     return (
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
@@ -512,6 +587,7 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
+
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -531,6 +607,7 @@ export default function AddSupplyDeliveryForm({
       </div>
     );
   }
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">

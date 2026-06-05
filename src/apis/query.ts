@@ -1,4 +1,13 @@
-import { HttpMethod, options } from "@/apis/types";
+import { useMutation, UseMutationOptions } from "@tanstack/react-query";
+
+import { apis } from "@/apis/index";
+import {
+  HttpMethod,
+  options,
+  SuperBatchRequestBody,
+  SuperBatchResponse,
+  SuperBatchResult,
+} from "@/apis/types";
 
 const CARE_ACCESS_TOKEN_LOCAL_STORAGE_KEY = "care_access_token";
 
@@ -63,3 +72,74 @@ export const request = async <T>(
     throw { error, status: response.status };
   }
 };
+
+// ---------------------------------------------------------------------------
+// Super Batch Request mutation
+// ---------------------------------------------------------------------------
+
+export class SuperBatchError extends Error {
+  results: SuperBatchResult[];
+  failed: SuperBatchResult[];
+  status?: number;
+
+  constructor(
+    message: string,
+    info: {
+      results: SuperBatchResult[];
+      failed: SuperBatchResult[];
+      status?: number;
+    },
+  ) {
+    super(message);
+    this.name = "SuperBatchError";
+    this.results = info.results;
+    this.failed = info.failed;
+    this.status = info.status;
+  }
+}
+
+function extractResultsFromError(err: any): SuperBatchResult[] {
+  const body = err?.error ?? err;
+  const results = body?.results ?? err?.results;
+  return Array.isArray(results) ? results : [];
+}
+
+export function useSuperBatchRequest(
+  mutationOptions?: Omit<
+    UseMutationOptions<
+      SuperBatchResult[],
+      SuperBatchError,
+      SuperBatchRequestBody
+    >,
+    "mutationFn"
+  >,
+) {
+  return useMutation<SuperBatchResult[], SuperBatchError, SuperBatchRequestBody>(
+    {
+      mutationFn: async (payload) => {
+        let response: SuperBatchResponse;
+        try {
+          response = await apis.superBatchRequest(payload);
+        } catch (err: any) {
+          const results = extractResultsFromError(err);
+          if (results.length) {
+            throw new SuperBatchError("Batch rolled back", {
+              results,
+              failed: results.filter((r) => r.status_code > 299),
+              status: err?.status,
+            });
+          }
+          throw err;
+        }
+
+        const results = response.results ?? [];
+        const failed = results.filter((r) => r.status_code > 299);
+        if (failed.length) {
+          throw new SuperBatchError("Batch rolled back", { results, failed });
+        }
+        return results;
+      },
+      ...mutationOptions,
+    },
+  );
+}
