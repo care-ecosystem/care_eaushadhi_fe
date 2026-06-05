@@ -56,6 +56,7 @@ interface SupplierSelectProps {
 }
 
 function SupplierSelect({ options, value, onChange, placeholder = "Select supplier..." }: SupplierSelectProps) {
+    const { t } = useTranslation(I18NNAMESPACE);
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const selected = options.find(o => o.id === value);
@@ -84,7 +85,7 @@ function SupplierSelect({ options, value, onChange, placeholder = "Select suppli
             {open && (
                 <div className="absolute top-full left-0 z-30 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
                     {options.length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-4">No options available</p>
+                        <p className="text-xs text-gray-400 text-center py-4">{t("drawer_no_options")}</p>
                     ) : (
                         options.map(o => (
                             <button
@@ -414,55 +415,57 @@ export default function InstituteMappingAdmin() {
                                     {t("drawer_supplier_mappings_subtitle")}
                                 </p>
 
-                                {/* Column headers */}
-                                <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 px-1 mb-2">
-                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_supplier")}</span>
-                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_warehouse")}</span>
-                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_default")}</span>
-                                    <span />
-                                </div>
-
                                 <div className="space-y-3">
                                     {/* Existing rows */}
                                     {supplierRows.map((s, idx) => (
-                                        <div key={s.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                                            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
-                                                <SupplierSelect
-                                                    options={suppliers.map(sup => ({ id: sup.id, name: sup.name }))}
-                                                    value={s.supplier_id}
-                                                    onChange={(id, name) => {
-                                                        setSupplierRows(rows => rows.map((r, i) =>
-                                                            i === idx ? {
-                                                                ...r,
-                                                                supplier_id: id,
-                                                                supplier_name: name,
-                                                                eaushadhi_warehouse_name: r.eaushadhi_warehouse_name || name,
-                                                            } : r
-                                                        ));
-                                                    }}
-                                                    placeholder={t("drawer_supplier_placeholder")}
-                                                />
-                                                <Input
-                                                    value={s.eaushadhi_warehouse_name}
-                                                    onChange={e => setSupplierRows(rows => rows.map((r, i) =>
-                                                        i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
-                                                    ))}
-                                                    placeholder={t("drawer_warehouse_placeholder")}
-                                                    className="h-9 text-sm"
-                                                />
-                                                <RadioButton
-                                                    checked={s.is_default}
-                                                    onClick={() => setSupplierRows(rows =>
-                                                        rows.map(r => ({ ...r, is_default: r.id === s.id }))
-                                                    )}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSupplierRows(rows => rows.filter(r => r.id !== s.id))}
-                                                    className="text-gray-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <Trash2 className="size-4" />
-                                                </button>
+                                        <div key={s.id} className="border border-gray-200 rounded-lg p-3 space-y-3 relative">
+                                            {/* Delete button - top right */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setSupplierRows(rows => rows.filter(r => r.id !== s.id))}
+                                                className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded hover:bg-gray-50"
+                                            >
+                                                <Trash2 className="size-4" />
+                                            </button>
+                                            <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-start pr-8">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_supplier")}</label>
+                                                    <SupplierSelect
+                                                        options={suppliers.map(sup => ({ id: sup.id, name: sup.name }))}
+                                                        value={s.supplier_id}
+                                                        onChange={(id, name) => {
+                                                            setSupplierRows(rows => rows.map((r, i) =>
+                                                                i === idx ? {
+                                                                    ...r,
+                                                                    supplier_id: id,
+                                                                    supplier_name: name,
+                                                                    eaushadhi_warehouse_name: r.eaushadhi_warehouse_name || name,
+                                                                } : r
+                                                            ));
+                                                        }}
+                                                        placeholder={t("drawer_supplier_placeholder")}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_warehouse")}</label>
+                                                    <Input
+                                                        value={s.eaushadhi_warehouse_name}
+                                                        onChange={e => setSupplierRows(rows => rows.map((r, i) =>
+                                                            i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
+                                                        ))}
+                                                        placeholder={t("drawer_warehouse_placeholder")}
+                                                        className="h-9 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5 flex flex-col items-center justify-start">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_default")}</label>
+                                                    <RadioButton
+                                                        checked={s.is_default}
+                                                        onClick={() => setSupplierRows(rows =>
+                                                            rows.map(r => ({ ...r, is_default: r.id === s.id }))
+                                                        )}
+                                                    />
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <input
@@ -479,64 +482,65 @@ export default function InstituteMappingAdmin() {
                                     ))}
 
                                     {newSupplierRows.map((s, idx) => (
-                                        <div key={s.tempId} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                                            {/* Column headers inside card */}
-                                            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center mb-1">
-                                                <span className="text-xs text-gray-500">Supplier</span>
-                                                <span className="text-xs text-gray-500">eAushadhi Warehouse Name</span>
-                                                <span className="text-xs text-gray-500">Default</span>
-                                                <span />
+                                        <div key={s.tempId} className="border border-gray-200 rounded-lg p-3 space-y-3 relative">
+                                            {/* Delete button - top right */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setNewSupplierRows(rows => rows.filter((_, i) => i !== idx))}
+                                                className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded hover:bg-gray-50"
+                                            >
+                                                <Trash2 className="size-4" />
+                                            </button>
+                                            <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-start pr-8">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_supplier")}</label>
+                                                    <SupplierSelect
+                                                        options={suppliers.map(sup => ({ id: sup.id, name: sup.name }))}
+                                                        value={s.supplier_id}
+                                                        onChange={(id, name) => {
+                                                            setNewSupplierRows(rows => rows.map((r, i) =>
+                                                                i === idx ? {
+                                                                    ...r,
+                                                                    supplier_id: id,
+                                                                    supplier_name: name,
+                                                                    eaushadhi_warehouse_name: r.eaushadhi_warehouse_name || name,
+                                                                } : r
+                                                            ));
+                                                        }}
+                                                        placeholder={t("drawer_supplier_placeholder")}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_warehouse")}</label>
+                                                    <Input
+                                                        value={s.eaushadhi_warehouse_name}
+                                                        onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
+                                                            i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
+                                                        ))}
+                                                        placeholder={t("drawer_warehouse_placeholder")}
+                                                        className="h-9 text-sm"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5 flex flex-col items-center justify-start">
+                                                    <label className="text-xs font-medium text-gray-600">{t("drawer_col_default")}</label>
+                                                    <RadioButton
+                                                        checked={s.is_default}
+                                                        onClick={() => setNewSupplierRows(rows =>
+                                                            rows.map((r, i) => ({ ...r, is_default: i === idx }))
+                                                        )}
+                                                    />
+                                                </div>
                                             </div>
-                                            {/* Inputs row */}
-                                            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
-                                                <SupplierSelect
-                                                    options={suppliers.map(sup => ({ id: sup.id, name: sup.name }))}
-                                                    value={s.supplier_id}
-                                                    onChange={(id, name) => {
-                                                        setNewSupplierRows(rows => rows.map((r, i) =>
-                                                            i === idx ? {
-                                                                ...r,
-                                                                supplier_id: id,
-                                                                supplier_name: name,
-                                                                eaushadhi_warehouse_name: r.eaushadhi_warehouse_name || name,
-                                                            } : r
-                                                        ));
-                                                    }}
-                                                    placeholder="Select supplier..."
-                                                />
-                                                <Input
-                                                    value={s.eaushadhi_warehouse_name}
-                                                    onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
-                                                        i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
-                                                    ))}
-                                                    placeholder="e.g. Mysuru WH"
-                                                    className="h-9 text-xs"
-                                                />
-                                                <RadioButton
-                                                    checked={s.is_default}
-                                                    onClick={() => setNewSupplierRows(rows =>
-                                                        rows.map((r, i) => ({ ...r, is_default: i === idx }))
-                                                    )}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setNewSupplierRows(rows => rows.filter((_, i) => i !== idx))}
-                                                    className="text-gray-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <Trash2 className="size-4" />
-                                                </button>
-                                            </div>
-                                            {/* Same as supplier name */}
-                                            <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex items-center gap-2">
                                                 <input
                                                     type="checkbox"
-                                                    className="size-3"
+                                                    className="size-3.5 cursor-pointer"
                                                     checked={s.eaushadhi_warehouse_name === s.supplier_name}
                                                     onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
                                                         i === idx ? { ...r, eaushadhi_warehouse_name: e.target.checked ? r.supplier_name : "" } : r
                                                     ))}
                                                 />
-                                                <span className="text-xs text-gray-500">Same as supplier name</span>
+                                                <span className="text-xs text-gray-500">{t("drawer_same_as_supplier")}</span>
                                             </div>
                                         </div>
                                     ))}
@@ -563,19 +567,23 @@ export default function InstituteMappingAdmin() {
                                 <h3 className="text-base font-semibold text-gray-900 mb-1">{t("drawer_settings_title")}</h3>
                                 <p className="text-sm text-gray-500 mb-4">{t("drawer_settings_subtitle")}</p>
                                 <div className="space-y-5">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div>
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1">
                                             <p className="text-sm font-medium text-gray-900">{t("drawer_disable_inward_date_label")}</p>
                                             <p className="text-xs text-gray-500 mt-0.5">{t("drawer_disable_inward_date_hint")}</p>
                                         </div>
-                                        <Toggle checked={disableInwardDate} onChange={() => setDisableInwardDate(v => !v)} />
+                                        <div className="shrink-0 mt-0.5">
+                                            <Toggle checked={disableInwardDate} onChange={() => setDisableInwardDate(v => !v)} />
+                                        </div>
                                     </div>
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div>
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1">
                                             <p className="text-sm font-medium text-gray-900">{t("drawer_manual_addition_label")}</p>
                                             <p className="text-xs text-gray-500 mt-0.5">{t("drawer_manual_addition_hint")}</p>
                                         </div>
-                                        <Toggle checked={manualAddition} onChange={() => setManualAddition(v => !v)} />
+                                        <div className="shrink-0 mt-0.5">
+                                            <Toggle checked={manualAddition} onChange={() => setManualAddition(v => !v)} />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
