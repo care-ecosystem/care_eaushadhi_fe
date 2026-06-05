@@ -185,7 +185,7 @@ export default function DeliveryOrderShow({
           destination: deliveryOrder?.destination.id,
         },
       ),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({
         queryKey: ["deliveryOrder", deliveryOrderId],
       });
@@ -667,6 +667,7 @@ export default function DeliveryOrderShow({
                   deliveryOrderId={deliveryOrderId}
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
+                  supplyDeliveriesCount={supplyDeliveries?.length}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["supplyDeliveries", deliveryOrderId],

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { PlusCircle, Trash2, AlertCircle } from "lucide-react";
+import { PlusCircle, Trash2, AlertCircle, RefreshCw, CloudOff, CircleCheck } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -358,12 +358,14 @@ export default function AddSupplyDeliveryForm({
   deliveryOrderId,
   destination,
   onSuccess,
+  supplyDeliveriesCount,
   inwardRecordId: propInwardRecordId,
 }: {
   facilityId: string;
   deliveryOrderId: string;
   destination: string;
   onSuccess: () => void;
+  supplyDeliveriesCount: number;
   inwardRecordId?: string;
 }) {
   const [rows, setRows] = useState<RowItem[]>([]);
@@ -598,24 +600,30 @@ export default function AddSupplyDeliveryForm({
   }
 
   if (rows.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <p className="text-sm font-medium text-gray-700">
-          Add items to this delivery
-        </p>
-        <p className="text-xs text-gray-500">
-          Add products that are being delivered
-        </p>
-        <Button
-          variant="outline"
-          onClick={addRow}
-          className="flex items-center gap-2"
-        >
-          <PlusCircle className="size-4" /> Add Item
-        </Button>
-      </div>
-    );
-  }
+  const allConsumed = supplyDeliveriesCount > 0;
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      {allConsumed
+        ? <CircleCheck className="size-8 text-green-500" />
+        : <CloudOff className="size-8 text-gray-400" />}
+      <p className="text-sm font-medium text-gray-700">
+        {allConsumed
+          ? "All items have been added"
+          : "No items from Eaushadhi"}
+      </p>
+      <p className="text-xs text-gray-500">
+        {allConsumed
+          ? "All available items have been added. Sync again if new stock has arrived."
+          : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
+      </p>
+      <Button variant="outline" onClick={addRow}
+        className="flex items-center gap-2">
+        <RefreshCw className="size-4" />
+        {allConsumed ? "Check for new items" : "Retry sync"}
+      </Button>
+    </div>
+  );
+}
 
   return (
     <div className="space-y-4">
