@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
-import { PlusCircle, Trash2, AlertCircle, RefreshCw, CloudOff, CircleCheck } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  Trash2,
+  AlertCircle,
+  RefreshCw,
+  CloudOff,
+  CircleCheck,
+} from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,20 +20,15 @@ import {
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
-import {
-  useSuperBatchRequest,
-  SuperBatchError,
-} from "@/apis/query";
-import {
-  RowDeliveryInput,
-  RowDeliveryBatchContext,
-} from "@/apis";
+import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { RowDeliveryInput, RowDeliveryBatchContext } from "@/apis";
 import {
   buildChainBatch,
   chunkRows,
   extractChainResults,
   SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
@@ -40,14 +42,6 @@ interface ProductMapping {
   eaushadhi_drug_name: string;
   eaushadhi_drug_id: string;
   product_knowledge: ProductKnowledge;
-}
-
-interface Product {
-  id: string;
-  batch?: { lot_number: string };
-  expiration_date?: string;
-  standard_pack_size?: number;
-  charge_item_definition?: { slug: string };
 }
 
 interface RowItem {
@@ -80,10 +74,28 @@ interface InwardItem {
   quantity_received_current: string;
   unit_pack: string;
   quantity_in_units?: string;
+  warehouse_name: string;
 }
 
 interface InwardRecord {
   items: InwardItem[];
+}
+
+interface SupplierMapping {
+  id: string;
+  supplier_id: string;
+  eaushadhi_warehouse_name: string;
+  is_default: boolean;
+}
+
+interface InstituteMappingResponse {
+  count: number;
+  results: Array<{
+    id: string;
+    facility_id: string;
+    eaushadhi_institute_id: string;
+    supplier_mappings: SupplierMapping[];
+  }>;
 }
 
 const EMPTY_ROW = (): RowItem => ({
@@ -121,6 +133,7 @@ function ProductMappingSelector({
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
 }) {
+  const { t } = useTranslation(I18NNAMESPACE);
   const [isOpen, setIsOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -142,7 +155,7 @@ function ProductMappingSelector({
       setSearchResults(response.results || []);
     } catch (err) {
       console.error("Error fetching product mappings:", err);
-      toast.error("Failed to load product options");
+      toast.error(t("supply_form_load_products_error"));
       setSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -177,12 +190,12 @@ function ProductMappingSelector({
         <SelectValue
           placeholder={
             !eaushadhiDrugId
-              ? "No drug selected"
+              ? t("supply_form_no_drug_selected")
               : isSearching
-                ? "Loading..."
+                ? t("supply_form_loading")
                 : selectedMapping
                   ? selectedMapping.product_knowledge.name
-                  : "Select a product"
+                  : t("supply_form_select_product")
           }
         />
       </SelectTrigger>
@@ -190,12 +203,12 @@ function ProductMappingSelector({
         {isSearching && (
           <div className="flex items-center justify-center py-4 text-xs text-gray-500">
             <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
-            Searching...
+            {t("supply_form_searching")}
           </div>
         )}
         {!isSearching && searchResults.length === 0 && (
           <div className="py-4 text-center text-xs text-gray-500">
-            No products found
+            {t("supply_form_no_products_found")}
           </div>
         )}
         {!isSearching &&
@@ -221,6 +234,7 @@ function DeliveryRow({
   onChange: (updated: RowItem) => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation(I18NNAMESPACE);
   const set = useCallback(
     (field: keyof RowItem, value: unknown) =>
       onChange({ ...row, [field]: value } as RowItem),
@@ -271,7 +285,7 @@ function DeliveryRow({
           />
           {row.eaushadhi_drug_name && (
             <span className="text-xs text-gray-500 truncate">
-              eAushadhi: {row.eaushadhi_drug_name}
+              {t("supply_form_eaushadhi_prefix")} {row.eaushadhi_drug_name}
             </span>
           )}
         </div>
@@ -357,6 +371,7 @@ export default function AddSupplyDeliveryForm({
   facilityId,
   deliveryOrderId,
   destination,
+  supplierId,
   onSuccess,
   supplyDeliveriesCount,
   inwardRecordId: propInwardRecordId,
@@ -364,10 +379,12 @@ export default function AddSupplyDeliveryForm({
   facilityId: string;
   deliveryOrderId: string;
   destination: string;
+  supplierId?: string;
   onSuccess: () => void;
   supplyDeliveriesCount: number;
   inwardRecordId?: string;
 }) {
+  const { t } = useTranslation(I18NNAMESPACE);
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
@@ -391,9 +408,33 @@ export default function AddSupplyDeliveryForm({
     setRows((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
+  // Step 1: Fetch institute mappings to get supplier warehouse name
+  const { data: instituteMappings } = useQuery({
+    queryKey: ["instituteMappings", facilityId],
+    queryFn: () =>
+      request<InstituteMappingResponse>(
+        `/api/care_eaushadhi/institute-mappings/`,
+        HttpMethod.GET,
+        {
+          facility_id: facilityId,
+        },
+      ),
+    enabled: !!facilityId,
+  });
 
-  // Fetch inward record and prefill rows
+  // Extract warehouse name from supplier mappings
+  const supplierWarehouseName = useMemo(() => {
+    if (!supplierId || !instituteMappings?.results?.[0]) return null;
+
+    const mappingResult = instituteMappings.results[0];
+    const supplierMapping = mappingResult.supplier_mappings.find(
+      (sm) => sm.supplier_id === supplierId,
+    );
+
+    return supplierMapping?.eaushadhi_warehouse_name || null;
+  }, [supplierId, instituteMappings]);
+
+  // Step 2: Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
     queryFn: () =>
@@ -404,11 +445,17 @@ export default function AddSupplyDeliveryForm({
     enabled: !!inwardRecordId,
   });
 
+  // Step 3: Filter and prefill rows based on warehouse name
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
     try {
-      const newRows = inwardRecord.items.map((item) => {
+      // Filter items by warehouse name
+      const filteredItems = inwardRecord.items.filter(
+        (item) => item.warehouse_name === supplierWarehouseName,
+      );
+
+      const newRows = filteredItems.map((item) => {
         const expiryDate = item.expiry_date
           ? item.expiry_date.split("T")[0]
           : "";
@@ -439,11 +486,9 @@ export default function AddSupplyDeliveryForm({
       setPrefillError("");
     } catch (err) {
       console.error("Error prefilling data:", err);
-      setPrefillError(
-        "Failed to prefill data from inward record. Please check the data and try again.",
-      );
+      setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord]);
+  }, [inwardRecord, supplierWarehouseName]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -465,15 +510,15 @@ export default function AddSupplyDeliveryForm({
     for (const [i, row] of rows.entries()) {
       const n = i + 1;
       if (!row.product_knowledge_slug) {
-        toast.error(`Row ${n}: Select a product`);
+        toast.error(t("supply_form_row_select_product", { n }));
         return false;
       }
       if (!row.batch_number) {
-        toast.error(`Row ${n}: Batch number required`);
+        toast.error(t("supply_form_row_batch_required", { n }));
         return false;
       }
       if (!row.expiry_date) {
-        toast.error(`Row ${n}: Expiry date required`);
+        toast.error(t("supply_form_row_expiry_required", { n }));
         return false;
       }
     }
@@ -482,7 +527,7 @@ export default function AddSupplyDeliveryForm({
 
   async function handleSave() {
     if (rows.length === 0) {
-      toast.error("Add at least one item");
+      toast.error(t("supply_form_add_one_item"));
       return;
     }
 
@@ -504,7 +549,7 @@ export default function AddSupplyDeliveryForm({
       }
 
       if (!finalRecordDeliveryId) {
-        toast.error("Missing record delivery reference");
+        toast.error(t("supply_form_missing_record_delivery_ref"));
         return;
       }
 
@@ -552,7 +597,7 @@ export default function AddSupplyDeliveryForm({
         }
       }
 
-      toast.success("Saved successfully");
+      toast.success(t("supply_form_save_success"));
       setRows([]);
       onSuccess();
     } catch (err) {
@@ -562,14 +607,14 @@ export default function AddSupplyDeliveryForm({
           `Failed: ${
             (firstError?.data as any)?.detail ??
             firstError?.status_code ??
-            "Unknown error"
+            t("supply_form_unexpected_error")
           }`,
         );
       } else if (err instanceof Error) {
         toast.error(err.message);
       } else {
         console.error(err);
-        toast.error("Unexpected error");
+        toast.error(t("supply_form_unexpected_error"));
       }
     } finally {
       setIsProcessing(false);
@@ -600,30 +645,35 @@ export default function AddSupplyDeliveryForm({
   }
 
   if (rows.length === 0) {
-  const allConsumed = supplyDeliveriesCount > 0;
-  return (
-    <div className="flex flex-col items-center gap-3 py-8 text-center">
-      {allConsumed
-        ? <CircleCheck className="size-8 text-green-500" />
-        : <CloudOff className="size-8 text-gray-400" />}
-      <p className="text-sm font-medium text-gray-700">
-        {allConsumed
-          ? "All items have been added"
-          : "No items from Eaushadhi"}
-      </p>
-      <p className="text-xs text-gray-500">
-        {allConsumed
-          ? "All available items have been added. Sync again if new stock has arrived."
-          : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
-      </p>
-      <Button variant="outline" onClick={addRow}
-        className="flex items-center gap-2">
-        <RefreshCw className="size-4" />
-        {allConsumed ? "Check for new items" : "Retry sync"}
-      </Button>
-    </div>
-  );
-}
+    const allConsumed = supplyDeliveriesCount > 0;
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        {allConsumed ? (
+          <CircleCheck className="size-8 text-green-500" />
+        ) : (
+          <CloudOff className="size-8 text-gray-400" />
+        )}
+        <p className="text-sm font-medium text-gray-700">
+          {allConsumed
+            ? t("supply_form_all_items_added")
+            : t("supply_form_no_items_from_eaushadhi")}
+        </p>
+        <p className="text-xs text-gray-500">
+          {allConsumed
+            ? t("supply_form_all_items_desc")
+            : t("supply_form_no_items_desc")}
+        </p>
+        <Button
+          variant="outline"
+          onClick={()=>{}}
+          className="flex items-center gap-2"
+        >
+          <RefreshCw className="size-4" />
+          {allConsumed ? t("supply_form_check_new_items") : t("supply_form_retry_sync")}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -677,10 +727,10 @@ export default function AddSupplyDeliveryForm({
             onClick={() => setRows([])}
             disabled={isProcessing}
           >
-            Cancel
+            {t("supply_form_cancel")}
           </Button>
           <Button onClick={handleSave} disabled={isProcessing}>
-            {isProcessing ? "Saving..." : "Save"}
+            {isProcessing ? t("supply_form_saving") : t("supply_form_save")}
           </Button>
         </div>
       </div>

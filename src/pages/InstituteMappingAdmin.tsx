@@ -84,7 +84,7 @@ function SupplierSelect({ options, value, onChange, placeholder = "Select suppli
             {open && (
                 <div className="absolute top-full left-0 z-30 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
                     {options.length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-4">No options available</p>
+                        <p className="text-xs text-gray-400 text-center py-4">{t("drawer_no_options")}</p>
                     ) : (
                         options.map(o => (
                             <button
@@ -502,14 +502,14 @@ export default function InstituteMappingAdmin() {
                                                             } : r
                                                         ));
                                                     }}
-                                                    placeholder="Select supplier..."
+                                                    placeholder={t("drawer_supplier_placeholder")}
                                                 />
                                                 <Input
                                                     value={s.eaushadhi_warehouse_name}
                                                     onChange={e => setNewSupplierRows(rows => rows.map((r, i) =>
                                                         i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
                                                     ))}
-                                                    placeholder="e.g. Mysuru WH"
+                                                    placeholder={t("drawer_warehouse_placeholder")}
                                                     className="h-9 text-xs"
                                                 />
                                                 <RadioButton
@@ -536,7 +536,7 @@ export default function InstituteMappingAdmin() {
                                                         i === idx ? { ...r, eaushadhi_warehouse_name: e.target.checked ? r.supplier_name : "" } : r
                                                     ))}
                                                 />
-                                                <span className="text-xs text-gray-500">Same as supplier name</span>
+                                                <span className="text-xs text-gray-500">{t("drawer_same_as_supplier")}</span>
                                             </div>
                                         </div>
                                     ))}

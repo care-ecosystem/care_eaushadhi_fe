@@ -24,9 +24,16 @@ interface Props {
   deliveryOrderId?: string;
 }
 
-interface Organization {
+interface SupplierMapping {
   id: string;
-  name: string;
+  supplier_id: string;
+  eaushadhi_warehouse_name: string;
+}
+
+interface InstituteMappingsResponse {
+  meta: Record<string, unknown>;
+  credentials_ref: string;
+  supplier_mappings: SupplierMapping[];
 }
 
 // Returns today's date formatted as MM/DD/YYYY
@@ -39,24 +46,29 @@ function getTodayFormatted() {
 }
 
 export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
-  const [name, setName] = useState("fetching stock from eAushadhi");
+  const { t } = useTranslation(I18NNAMESPACE);
+  const [name, setName] = useState(t("fetch_page_default_name"));
   const [supplier, setSupplier] = useState("");
   const [note, setNote] = useState("");
   const [inwardDate, setInwardDate] = useState(getTodayFormatted());
-  const { t } = useTranslation(I18NNAMESPACE);
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
-  const { data: suppliersData } = useQuery({
-    queryKey: ["organizations", "product_supplier"],
+  const { data: instituteMappings } = useQuery({
+    queryKey: ["instituteMappings", facilityId],
     queryFn: () =>
-      request<{ results: Organization[] }>(
-        "/api/v1/organization/",
+      request<{ results: InstituteMappingsResponse[] }>(
+        "/api/care_eaushadhi/institute-mappings/",
         HttpMethod.GET,
-        { org_type: "product_supplier" },
+        { facility_id: facilityId },
       ),
+    enabled: !!facilityId,
   });
 
-  const supplierOptions = suppliersData?.results ?? [];
+  const supplierOptions =
+    instituteMappings?.results?.[0]?.supplier_mappings?.map((mapping) => ({
+      id: mapping.supplier_id,
+      name: mapping.eaushadhi_warehouse_name,
+    })) ?? [];
 
   const { mutate: createDeliveryOrder, isPending } = useMutation({
     mutationFn: () =>
