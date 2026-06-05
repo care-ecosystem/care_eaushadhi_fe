@@ -24,9 +24,16 @@ interface Props {
     deliveryOrderId: string;
 }
 
-interface Organization {
+interface SupplierMapping {
     id: string;
-    name: string;
+    supplier_id: string;
+    eaushadhi_warehouse_name: string;
+}
+
+interface InstituteMappingsResponse {
+    meta: Record<string, unknown>;
+    credentials_ref: string;
+    supplier_mappings: SupplierMapping[];
 }
 
 interface DeliveryOrder {
@@ -65,17 +72,22 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
         }
     }, [existingOrder]);
 
-    const { data: suppliersData } = useQuery({
-        queryKey: ["organizations", "product_supplier"],
+    const { data: instituteMappings } = useQuery({
+        queryKey: ["instituteMappings", facilityId],
         queryFn: () =>
-            request<{ results: Organization[] }>(
-                "/api/v1/organization/",
+            request<{ results: InstituteMappingsResponse[] }>(
+                "/api/care_eaushadhi/institute-mappings/",
                 HttpMethod.GET,
-                { org_type: "product_supplier" },
+                { facility_id: facilityId },
             ),
+        enabled: !!facilityId,
     });
 
-    const supplierOptions = suppliersData?.results ?? [];
+    const supplierOptions =
+        instituteMappings?.results?.[0]?.supplier_mappings?.map((mapping) => ({
+            id: mapping.supplier_id,
+            name: mapping.eaushadhi_warehouse_name,
+        })) ?? [];
 
     const { mutate: updateDeliveryOrder, isPending } = useMutation({
         mutationFn: () =>

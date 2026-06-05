@@ -175,5 +175,22 @@
 "drawer_mapping_create_error": "Failed to create mapping",
 "drawer_facility_required": "Please select a facility",
 "drawer_institute_id_required": "Please enter eAushadhi Institute ID",
-"drawer_credentials_required": "Please enter credentials reference"
+"drawer_credentials_required": "Please enter credentials reference",
+"supply_form_load_products_error": "Failed to load product options",
+"supply_form_no_drug_selected": "No drug selected",
+"supply_form_loading": "Loading...",
+"supply_form_searching": "Searching...",
+"supply_form_no_products_found": "No products found",
+"supply_form_eaushadhi_prefix": "eAushadhi:",
+"supply_form_missing_record_delivery_ref": "Missing record delivery reference",
+"supply_form_save_success": "Saved successfully",
+"supply_form_unexpected_error": "Unexpected error",
+"supply_form_all_items_added": "All items have been added",
+"supply_form_no_items_from_eaushadhi": "No items from Eaushadhi",
+"supply_form_all_items_desc": "All available items have been added. Sync again if new stock has arrived.",
+"supply_form_no_items_desc": "Eaushadhi returned no items. This could be a sync delay — try again shortly.",
+"supply_form_check_new_items": "Check for new items",
+"supply_form_retry_sync": "Retry sync",
+"fetch_page_default_name": "fetching stock from eAushadhi",
+"drawer_no_options": "No options available"
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   ChevronLeft,
   EllipsisVertical,
@@ -235,7 +235,7 @@ export default function DeliveryOrderShow({
 
   function handleMarkAsAbandoned() {
     if (selectedDeliveries.length === 0) {
-      toast.error("Please select at least one item");
+      toast.error(t("delivery_show_select_item"));
       return;
     }
     const datapoints = supplyDeliveries
@@ -255,7 +255,7 @@ export default function DeliveryOrderShow({
 
   function handleMarkAsDamaged() {
     if (selectedDeliveries.length === 0) {
-      toast.error("Please select at least one item");
+      toast.error(t("delivery_show_select_item"));
       return;
     }
     const datapoints = supplyDeliveries
