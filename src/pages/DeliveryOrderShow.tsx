@@ -665,8 +665,7 @@ export default function DeliveryOrderShow({
                   facilityId={facilityId}
                   deliveryOrderId={deliveryOrderId}
                   destination={deliveryOrder.destination.id}
-                  inwardRecordId={/*inwardRecordId*/ "ec48c670-8940-407d-9850-408caac1d3df" /* TODO: replace with actual inwardRecordId */}
-                  recordDeliveryId={/* TODO: from record-deliveries; temp known id for now */ "3308ee73-f04c-4577-a83b-16fdd1eff5b2"}
+                  inwardRecordId={inwardRecordId}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["supplyDeliveries", deliveryOrderId],
