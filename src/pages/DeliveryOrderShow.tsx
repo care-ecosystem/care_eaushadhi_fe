@@ -185,12 +185,18 @@ export default function DeliveryOrderShow({
           destination: deliveryOrder?.destination.id,
         },
       ),
-    onSuccess: (response) => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({
         queryKey: ["deliveryOrder", deliveryOrderId],
       });
       toast.success(t("delivery_show_status_updated"));
       setOrderStatusDialog({ open: false, status: null });
+
+      // If status is pending, redirect to outgoing page
+      if (response?.status === "pending") {
+        const redirectPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/outgoing/${deliveryOrderId}`;
+        navigate(redirectPath);
+      }
     },
     onError: () => toast.error(t("delivery_show_status_error")),
   });
