@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { PlusCircle, X, ChevronDown, Check, Trash2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 interface SupplierMapping {
     id: string;
@@ -135,6 +137,7 @@ function RadioButton({ checked, onClick }: { checked: boolean; onClick: () => vo
 // ─── Main Component ────────────────────────────────────────────────────────
 export default function InstituteMappingAdmin() {
     const queryClient = useQueryClient();
+    const { t } = useTranslation(I18NNAMESPACE);
     const [selectedMapping, setSelectedMapping] = useState<InstituteMapping | null>(null);
     const [supplierRows, setSupplierRows] = useState<SupplierMapping[]>([]);
     const [newSupplierRows, setNewSupplierRows] = useState<NewSupplierRow[]>([]);
@@ -200,11 +203,11 @@ export default function InstituteMappingAdmin() {
                 },
             ),
         onSuccess: () => {
-            toast.success("Mapping updated successfully");
+            toast.success(t("drawer_mapping_updated"));
             queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
             setSelectedMapping(null);
         },
-        onError: () => toast.error("Failed to update mapping"),
+        onError: () => toast.error(t("drawer_mapping_update_error")),
     });
 
     const { mutate: createMapping, isPending: isCreating } = useMutation({
@@ -227,11 +230,11 @@ export default function InstituteMappingAdmin() {
                 },
             ),
         onSuccess: () => {
-            toast.success("Institute mapping created successfully");
+            toast.success(t("drawer_mapping_created"));
             queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
             setSelectedMapping(null);
         },
-        onError: () => toast.error("Failed to create mapping"),
+        onError: () => toast.error(t("drawer_mapping_create_error")),
     });
 
     const openDrawer = (m: InstituteMapping) => {
@@ -261,9 +264,9 @@ export default function InstituteMappingAdmin() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900">Institute Mappings</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">{t("admin_title")}</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Configure how each facility connects to eAushadhi and which CARE suppliers map to which eAushadhi warehouses. These mappings drive the supplier picker shown in the Inward Flow.
+                        {t("admin_subtitle")}
                     </p>
                 </div>
                 <Button
@@ -280,7 +283,7 @@ export default function InstituteMappingAdmin() {
                         setManualAddition(false); setSupplierRows([]); setNewSupplierRows([]);
                     }}
                 >
-                    <PlusCircle className="size-4" /> Add Institute Mapping
+                    <PlusCircle className="size-4" /> {t("admin_add_mapping")}
                 </Button>
             </div>
 
@@ -289,11 +292,11 @@ export default function InstituteMappingAdmin() {
                 <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Facility</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">eAushadhi Institute ID</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Suppliers Mapped</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Default Warehouse</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("admin_col_facility")}</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("admin_col_institute_id")}</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("admin_col_suppliers")}</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("admin_col_default_warehouse")}</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{t("admin_col_actions")}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -310,7 +313,7 @@ export default function InstituteMappingAdmin() {
                         ) : mappings.length === 0 ? (
                             <tr>
                                 <td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">
-                                    No institute mappings found. Add one to get started.
+                                    {t("admin_no_mappings")}
                                 </td>
                             </tr>
                         ) : (
@@ -326,13 +329,13 @@ export default function InstituteMappingAdmin() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-gray-600">
-                                            <span className="font-semibold">{m.supplier_mappings.length}</span> supplier{m.supplier_mappings.length !== 1 ? "s" : ""}
+                                            <span className="font-semibold">{m.supplier_mappings.length}</span>{m.supplier_mappings.length !== 1 ? t("admin_supplier_plural") : t("admin_supplier_single")}
                                         </td>
                                         <td className="px-4 py-3 text-gray-600">
                                             {defaultSupplier?.eaushadhi_warehouse_name ?? "—"}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <Button variant="outline" size="sm" onClick={() => openDrawer(m)}>Edit</Button>
+                                            <Button variant="outline" size="sm" onClick={() => openDrawer(m)}>{t("admin_edit")}</Button>
                                         </td>
                                     </tr>
                                 );
@@ -352,9 +355,9 @@ export default function InstituteMappingAdmin() {
                         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">
-                                    {selectedMapping?.id ? "Edit Institute Mapping" : "Add Institute Mapping"}
+                                    {selectedMapping?.id ? t("drawer_edit_title") : t("drawer_add_title")}
                                 </h2>
-                                <p className="text-sm text-gray-500 mt-0.5">Configure how this facility connects to eAushadhi.</p>
+                                <p className="text-sm text-gray-500 mt-0.5">{t("drawer_subtitle")}</p>
                             </div>
                             <button onClick={() => setSelectedMapping(null)} className="mt-1">
                                 <X className="size-5 text-gray-500 hover:text-gray-700" />
@@ -365,39 +368,39 @@ export default function InstituteMappingAdmin() {
 
                             {/* Institute Details */}
                             <div>
-                                <h3 className="text-base font-semibold text-gray-900 mb-1">Institute Details</h3>
-                                <p className="text-sm text-gray-500 mb-4">Identify the CARE facility and its corresponding eAushadhi credentials.</p>
+                                <h3 className="text-base font-semibold text-gray-900 mb-1">{t("drawer_institute_details_title")}</h3>
+                                <p className="text-sm text-gray-500 mb-4">{t("drawer_institute_details_subtitle")}</p>
                                 <div className="space-y-4">
                                     <div>
                                         <label className="text-sm font-medium text-gray-900 mb-1 block">
-                                            Facility <span className="text-red-500">*</span>
+                                            {t("drawer_facility_label")} <span className="text-red-500">*</span>
                                         </label>
                                         <SupplierSelect
                                             options={facilities.map(f => ({ id: f.id, name: f.name }))}
                                             value={facilityId}
                                             onChange={(id) => setFacilityId(id)}
-                                            placeholder="Select facility..."
+                                            placeholder={t("drawer_facility_placeholder")}
                                         />
-                                        <p className="text-xs text-gray-500 mt-1">The CARE facility this mapping applies to. One mapping per facility.</p>
+                                        <p className="text-xs text-gray-500 mt-1">{t("drawer_facility_hint")}</p>
                                     </div>
                                     <div>
                                         <label className="text-sm font-medium text-gray-900 mb-1 block">
-                                            eAushadhi Institute ID <span className="text-red-500">*</span>
+                                            {t("drawer_institute_id_label")} <span className="text-red-500">*</span>
                                         </label>
                                         <Input value={instituteId} onChange={e => setInstituteId(e.target.value)} className="h-9" />
-                                        <p className="text-xs text-gray-500 mt-1">The unique institute identifier registered with eAushadhi.</p>
+                                        <p className="text-xs text-gray-500 mt-1">{t("drawer_institute_id_hint")}</p>
                                     </div>
                                     <div>
-                                        <label className="text-sm font-medium text-gray-900 mb-1 block">Schema Version</label>
-                                        <Input value={schemaVersion} onChange={e => setSchemaVersion(e.target.value)} className="h-9" placeholder="e.g. 1.0" />
-                                        <p className="text-xs text-gray-500 mt-1">Defaults to the latest schema if left blank.</p>
+                                        <label className="text-sm font-medium text-gray-900 mb-1 block">{t("drawer_schema_version_label")}</label>
+                                        <Input value={schemaVersion} onChange={e => setSchemaVersion(e.target.value)} className="h-9" placeholder={t("drawer_schema_version_placeholder")} />
+                                        <p className="text-xs text-gray-500 mt-1">{t("drawer_schema_version_hint")}</p>
                                     </div>
                                     <div>
                                         <label className="text-sm font-medium text-gray-900 mb-1 block">
-                                            Credentials Reference <span className="text-red-500">*</span>
+                                            {t("drawer_credentials_ref_label")} <span className="text-red-500">*</span>
                                         </label>
                                         <Input value={credentialsRef} onChange={e => setCredentialsRef(e.target.value)} className="h-9" />
-                                        <p className="text-xs text-gray-500 mt-1">Name of the secret in the credentials vault holding the eAushadhi API key. The actual key is never displayed.</p>
+                                        <p className="text-xs text-gray-500 mt-1">{t("drawer_credentials_ref_hint")}</p>
                                     </div>
                                 </div>
                             </div>
@@ -406,16 +409,16 @@ export default function InstituteMappingAdmin() {
 
                             {/* Supplier Mappings */}
                             <div>
-                                <h3 className="text-base font-semibold text-gray-900 mb-1">Supplier Mappings</h3>
+                                <h3 className="text-base font-semibold text-gray-900 mb-1">{t("drawer_supplier_mappings_title")}</h3>
                                 <p className="text-sm text-gray-500 mb-4">
-                                    Map each CARE supplier to its eAushadhi warehouse name. The default supplier is auto-selected on the Fetch screen.
+                                    {t("drawer_supplier_mappings_subtitle")}
                                 </p>
 
                                 {/* Column headers */}
                                 <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 px-1 mb-2">
-                                    <span className="text-xs font-medium text-gray-500">Supplier</span>
-                                    <span className="text-xs font-medium text-gray-500">eAushadhi Warehouse Name</span>
-                                    <span className="text-xs font-medium text-gray-500">Default</span>
+                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_supplier")}</span>
+                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_warehouse")}</span>
+                                    <span className="text-xs font-medium text-gray-500">{t("drawer_col_default")}</span>
                                     <span />
                                 </div>
 
@@ -437,14 +440,14 @@ export default function InstituteMappingAdmin() {
                                                             } : r
                                                         ));
                                                     }}
-                                                    placeholder="Select supplier..."
+                                                    placeholder={t("drawer_supplier_placeholder")}
                                                 />
                                                 <Input
                                                     value={s.eaushadhi_warehouse_name}
                                                     onChange={e => setSupplierRows(rows => rows.map((r, i) =>
                                                         i === idx ? { ...r, eaushadhi_warehouse_name: e.target.value } : r
                                                     ))}
-                                                    placeholder="e.g. Mysuru WH"
+                                                    placeholder={t("drawer_warehouse_placeholder")}
                                                     className="h-9 text-sm"
                                                 />
                                                 <RadioButton
@@ -470,7 +473,7 @@ export default function InstituteMappingAdmin() {
                                                         i === idx ? { ...r, eaushadhi_warehouse_name: e.target.checked ? r.supplier_name : "" } : r
                                                     ))}
                                                 />
-                                                <span className="text-xs text-gray-500">Same as supplier name</span>
+                                                <span className="text-xs text-gray-500">{t("drawer_same_as_supplier")}</span>
                                             </div>
                                         </div>
                                     ))}
@@ -539,7 +542,7 @@ export default function InstituteMappingAdmin() {
                                     ))}
 
                                     {supplierRows.length === 0 && newSupplierRows.length === 0 && (
-                                        <p className="text-sm text-gray-400 text-center py-2">No supplier mappings yet.</p>
+                                        <p className="text-sm text-gray-400 text-center py-2">{t("drawer_no_suppliers")}</p>
                                     )}
                                 </div>
 
@@ -549,7 +552,7 @@ export default function InstituteMappingAdmin() {
                                     onClick={addNewSupplierRow}
                                     className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
                                 >
-                                    <span className="text-base">+</span> Add another supplier
+                                    <span className="text-base">+</span> {t("drawer_add_supplier")}
                                 </button>
                             </div>
 
@@ -557,20 +560,20 @@ export default function InstituteMappingAdmin() {
 
                             {/* Settings */}
                             <div>
-                                <h3 className="text-base font-semibold text-gray-900 mb-1">Settings</h3>
-                                <p className="text-sm text-gray-500 mb-4">Behavioural flags for this facility's inward workflow.</p>
+                                <h3 className="text-base font-semibold text-gray-900 mb-1">{t("drawer_settings_title")}</h3>
+                                <p className="text-sm text-gray-500 mb-4">{t("drawer_settings_subtitle")}</p>
                                 <div className="space-y-5">
                                     <div className="flex items-center justify-between gap-4">
                                         <div>
-                                            <p className="text-sm font-medium text-gray-900">Disable Inward Date</p>
-                                            <p className="text-xs text-gray-500 mt-0.5">Lock the inward date to today — users won't be able to backdate fetches.</p>
+                                            <p className="text-sm font-medium text-gray-900">{t("drawer_disable_inward_date_label")}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{t("drawer_disable_inward_date_hint")}</p>
                                         </div>
                                         <Toggle checked={disableInwardDate} onChange={() => setDisableInwardDate(v => !v)} />
                                     </div>
                                     <div className="flex items-center justify-between gap-4">
                                         <div>
-                                            <p className="text-sm font-medium text-gray-900">Allow Manual Addition</p>
-                                            <p className="text-xs text-gray-500 mt-0.5">Let users add items not present in the eAushadhi inward response.</p>
+                                            <p className="text-sm font-medium text-gray-900">{t("drawer_manual_addition_label")}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{t("drawer_manual_addition_hint")}</p>
                                         </div>
                                         <Toggle checked={manualAddition} onChange={() => setManualAddition(v => !v)} />
                                     </div>
@@ -580,13 +583,13 @@ export default function InstituteMappingAdmin() {
 
                         {/* Footer */}
                         <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-                            <Button variant="outline" onClick={() => setSelectedMapping(null)}>Cancel</Button>
+                            <Button variant="outline" onClick={() => setSelectedMapping(null)}>{t("drawer_cancel")}</Button>
                             <Button
                                 onClick={() => {
                                     if (!selectedMapping?.id) {
-                                        if (!facilityId) { toast.error("Please select a facility"); return; }
-                                        if (!instituteId) { toast.error("Please enter eAushadhi Institute ID"); return; }
-                                        if (!credentialsRef) { toast.error("Please enter credentials reference"); return; }
+                                        if (!facilityId) { toast.error(t("drawer_facility_required")); return; }
+                                        if (!instituteId) { toast.error(t("drawer_institute_id_required")); return; }
+                                        if (!credentialsRef) { toast.error(t("drawer_credentials_required")); return; }
                                         createMapping();
                                         return;
                                     }
@@ -595,7 +598,7 @@ export default function InstituteMappingAdmin() {
                                 disabled={isSaving || isCreating}
                                 className="!bg-green-700 hover:!bg-green-800 !text-white !opacity-100 flex items-center gap-2"
                             >
-                                {isSaving || isCreating ? "Saving..." : "✓ Save Mapping"}
+                                {isSaving || isCreating ? t("drawer_saving") : `✓ ${t("drawer_save_mapping")}`}
                             </Button>
                         </div>
                     </div>

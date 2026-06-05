@@ -1,5 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { navigate } from "raviger";
+import { useTranslation } from "react-i18next";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 interface Props {
     facilityId: string;
@@ -7,6 +9,7 @@ interface Props {
 }
 
 export default function EAusdhadhiTriggerButton({ facilityId, locationId }: Props) {
+    const { t } = useTranslation(I18NNAMESPACE);
     return (
         <Button
         variant="outline_primary"
@@ -29,7 +32,7 @@ export default function EAusdhadhiTriggerButton({ facilityId, locationId }: Prop
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            Fetch from eAushadhi
+            {t("fetch_from_eaushadhi")}
         </Button>
     );
 }

@@ -6,6 +6,7 @@ import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
 import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
 import React from "react";
 import { TruckIcon } from "lucide-react";
+import en from "../public/locale/en.json";
 
 // Wrapper component for pages
 function PageWrapper({ children }: { children: React.ReactNode }) {
@@ -29,10 +30,13 @@ const manifest = {
       () => import("./components/pluggables/eAusdhadhiTriggerButton"),
     ),
   },
+  i18n: {
+    en,
+  },
   routes: {
     "/admin/eaushadhi/institute-mappings": () => (
       <PageWrapper>
-       <InstituteMappingAdmin />
+        <InstituteMappingAdmin />
       </PageWrapper>
     ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch": ({

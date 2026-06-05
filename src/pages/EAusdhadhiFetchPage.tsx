@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
+import { useTranslation } from "react-i18next";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 interface Props {
   facilityId: string;
@@ -41,7 +43,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
   const [supplier, setSupplier] = useState("");
   const [note, setNote] = useState("");
   const [inwardDate, setInwardDate] = useState(getTodayFormatted());
-
+  const { t } = useTranslation(I18NNAMESPACE);
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
   const { data: suppliersData } = useQuery({
@@ -72,13 +74,13 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         },
       ),
     onSuccess: (data: any) => {
-      toast.success("Delivery order created successfully");
+      toast.success(t("fetch_page_success"));
       navigate(
         `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${inwardDate}`,
       );
     },
     onError: () => {
-      toast.error("Failed to create delivery order");
+      toast.error(t("fetch_page_error"));
     },
   });
 
@@ -87,9 +89,9 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-          Fetch from eAushadhi
+          {t("fetch_page_title")}
           <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">
-            Draft
+            {t("fetch_page_draft")}
           </span>
         </h1>
         <button
@@ -106,10 +108,10 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         {/* Name + Supplier */}
         <div className="grid sm:grid-cols-2 gap-4 items-start">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-900">Name</label>
+            <label className="text-sm font-medium text-gray-900">{t("fetch_page_name_label")}</label>
             <Input
               className="h-9 bg-white"
-              placeholder="Enter order name"
+              placeholder={t("fetch_page_name_placeholder")}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -117,11 +119,11 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-900">
-              Vendor/Distributor
+              {t("fetch_page_vendor_label")}
             </label>
             <Select value={supplier} onValueChange={setSupplier}>
               <SelectTrigger className="h-9 bg-white">
-                <SelectValue placeholder="Select Vendor/Distributor" />
+                <SelectValue placeholder={t("fetch_page_vendor_placeholder")} />
               </SelectTrigger>
               <SelectContent>
                 {supplierOptions.map((s) => (
@@ -137,30 +139,30 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         {/* Inward Date */}
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-gray-900">
-            Inward Date <span className="text-red-500">*</span>
+            {t("fetch_page_inward_date_label")} <span className="text-red-500">*</span>
           </label>
           <Input
             className="h-9 bg-white text-gray-500"
             value={inwardDate}
             onChange={(e) => setInwardDate(e.target.value)}
-            // readOnly
+          // readOnly
           />
           <p className="text-xs text-gray-500">
-            Defaults to today. Backdating is restricted by facility policy.
+            {t("fetch_page_inward_date_hint")}
           </p>
         </div>
 
         {/* Note */}
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-gray-900">
-            Note{" "}
+            {t("fetch_page_note_label")}{" "}
             <span className="text-gray-500 text-sm font-normal italic">
-              (Optional)
+              {t("fetch_page_note_optional")}
             </span>
           </label>
           <Textarea
             rows={3}
-            placeholder="Add any notes about this fetch..."
+            placeholder={t("fetch_page_note_placeholder")}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             className="bg-white"
@@ -175,7 +177,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
           variant="outline"
           onClick={() => navigate(returnPath)}
         >
-          Cancel
+          {t("fetch_page_cancel")}
         </Button>
 
         <Button
@@ -184,13 +186,13 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
           className="!bg-green-700 hover:!bg-green-800 !text-white !opacity-100"
           onClick={() => {
             if (!supplier) {
-              toast.error("Please select a vendor/distributor");
+              toast.error(t("fetch_page_vendor_error"));
               return;
             }
             createDeliveryOrder();
           }}
         >
-          {isPending ? "Fetching..." : "Fetch"}
+          {isPending ? t("fetch_page_fetching") : t("fetch_page_fetch")}
         </Button>
       </div>
     </div>
