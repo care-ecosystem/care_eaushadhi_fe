@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
+import { useTranslation } from "react-i18next";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 interface Props {
     facilityId: string;
@@ -43,7 +45,7 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
     const [name, setName] = useState("");
     const [supplier, setSupplier] = useState("");
     const [note, setNote] = useState("");
-
+    const { t } = useTranslation(I18NNAMESPACE);
     const returnPath = `/facility/${facilityId}/locations/${locationId}/eaushadhi/${deliveryOrderId}`;
 
     const { data: existingOrder, isFetching } = useQuery({
@@ -92,11 +94,11 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
             ),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["deliveryOrder", deliveryOrderId] });
-            toast.success("Delivery order updated successfully");
+            toast.success(t("delivery_form_success"));
             navigate(returnPath);
         },
         onError: () => {
-            toast.error("Failed to update delivery order");
+            toast.error(t("delivery_form_error"));
         },
     });
 
@@ -121,7 +123,7 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                    Edit Delivery
+                    {t("delivery_form_edit_title")}
                     {existingOrder?.status && (
                         <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 capitalize">
                             {existingOrder.status}
@@ -144,23 +146,23 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
                 <div className="grid grid-cols-2 gap-6 items-start">
                     <div className="flex flex-col gap-1.5">
                         <label className="text-sm font-medium text-gray-900">
-                            Name
+                        {t("delivery_form_name_label")}
                         </label>
                         <Input
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="Enter order name"
+                            placeholder={t("delivery_form_name_placeholder")}
                             className="h-9 bg-white"
                         />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
                         <label className="text-sm font-medium text-gray-900">
-                            Vendor/Distributor
+                        {t("delivery_form_vendor_label")}
                         </label>
                         <Select value={supplier} onValueChange={setSupplier}>
                             <SelectTrigger className="h-9 bg-white">
-                                <SelectValue placeholder="Select Vendor/Distributor" />
+                                <SelectValue placeholder={t("delivery_form_vendor_placeholder")} />
                             </SelectTrigger>
                             <SelectContent>
                                 {supplierOptions.map((s) => (
@@ -176,11 +178,11 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
                 {/* Note */}
                 <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium text-gray-900">
-                        Note{" "}
-                        <span className="text-gray-500 text-sm font-normal italic">(Optional)</span>
+                        {t("delivery_form_note_label")}{" "}
+                        <span className="text-gray-500 text-sm font-normal italic">{t("delivery_form_note_optional")}</span>
                     </label>
                     <Textarea
-                        placeholder="Add any notes about this order..."
+                        placeholder={t("delivery_form_note_placeholder")}
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                         rows={4}
@@ -192,7 +194,7 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
             {/* Footer buttons */}
             <div className="flex justify-end space-x-3">
                 <Button variant="outline" onClick={() => navigate(returnPath)}>
-                    Cancel
+                    {t("delivery_form_cancel")}
                     <span className="ml-1.5 text-xs bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-mono">
                         ESC
                     </span>
@@ -202,17 +204,17 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
                     style={{ backgroundColor: '#15803d', color: 'white', opacity: 1 }}
                     onClick={() => {
                         if (!name) {
-                            toast.error("Please enter a name");
+                            toast.error(t("delivery_form_name_error"));
                             return;
                         }
                         if (!supplier) {
-                            toast.error("Please select a vendor/distributor");
+                            toast.error(t("delivery_form_vendor_error"));
                             return;
                         }
                         updateDeliveryOrder();
                     }}
                 >
-                    {isPending ? "Saving..." : "Save"}
+                    {isPending ? t("delivery_form_saving") : t("delivery_form_save")}
                     <span
                         className="ml-1.5 text-xs rounded px-1.5 py-0.5 font-mono"
                         style={{ backgroundColor: '#166534', border: '1px solid #15803d', color: 'white' }}

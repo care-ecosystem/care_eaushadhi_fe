@@ -5,6 +5,8 @@ import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "react-i18next";
+import { I18NNAMESPACE } from "@/lib/contants";
 
 interface Props {
   facilityId: string;
@@ -108,7 +110,7 @@ export default function DeliveryOrderFetch({
   deliveryOrderId,
 }: Props) {
   const queryClient = useQueryClient();
-
+  const { t } = useTranslation(I18NNAMESPACE);
   // useRef so refetchInterval closure always reads the current value
   const isRetryingRef = useRef(false);
   // useState drives re-renders for UI (spinner vs action buttons)
@@ -265,7 +267,7 @@ export default function DeliveryOrderFetch({
   if (!deliveryOrder) {
     return (
       <div className="w-full px-6 py-6 max-w-5xl mx-auto">
-        <p className="text-gray-500">Delivery order not found.</p>
+        <p className="text-gray-500">{t("delivery_fetch_not_found")}</p>
       </div>
     );
   }
@@ -277,11 +279,11 @@ export default function DeliveryOrderFetch({
       return (
         <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
           <h2 className="text-lg text-gray-700">
-            Fetching inward records from eAushadhi
+            {t("delivery_fetch_loading_title")}
           </h2>
           <Loader2Icon className="animate-spin text-gray-500 size-6" />
           <p className="text-sm text-gray-500">
-            Please wait while we fetch the inward records…
+            {t("delivery_fetch_loading_desc")}
           </p>
         </div>
       );
@@ -292,7 +294,7 @@ export default function DeliveryOrderFetch({
       return (
         <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
           <Loader2Icon className="animate-spin text-gray-400 size-6" />
-          <p className="text-sm text-gray-400">Redirecting…</p>
+          <p className="text-sm text-gray-400">{t("delivery_fetch_redirecting")}</p>
         </div>
       );
     }
@@ -303,17 +305,13 @@ export default function DeliveryOrderFetch({
     const isFetchedEmpty =
       record?.sync_status === "FETCHED" && record.items_current_count === 0;
 
-    const heading = isFailed ? "Sync Failed" : "No Inward Records Found";
+    const heading = isFailed ? t("delivery_fetch_sync_failed") : t("delivery_fetch_no_records");
     const description = isFailed
-      ? "We couldn't fetch the inward records from eAushadhi. You can retry the sync or add the record manually."
+      ? t("delivery_fetch_failed_desc")
       : isFetchedEmpty
-        ? "The sync completed but no items were found for this date. You can refetch or add the record manually."
-        : "No inward records were found in eAushadhi for this date. You can try fetching again or add the record manually.";
-    const retryLabel = isInitiating
-      ? "Retrying…"
-      : isFailed
-        ? "Retry"
-        : "Refetch";
+        ? t("delivery_fetch_empty_desc")
+        : t("delivery_fetch_no_records_desc");
+    const retryLabel = isInitiating ? t("delivery_fetch_retrying") : isFailed ? t("delivery_fetch_retry") : t("delivery_fetch_refetch");
 
     return (
       <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
@@ -343,7 +341,7 @@ export default function DeliveryOrderFetch({
             ) : (
               <RefreshCw className="size-4" />
             )}
-            Fetch from eAushadhi
+            {t("delivery_fetch_from_eaushadhi")}
           </Button>
           <Button
             variant="outline"
@@ -351,7 +349,7 @@ export default function DeliveryOrderFetch({
             className="flex items-center gap-2"
           >
             <PencilLine className="size-4" />
-            Add Manually
+            {t("delivery_fetch_add_manually")}
           </Button>
         </div>
       </div>
@@ -373,13 +371,13 @@ export default function DeliveryOrderFetch({
               {deliveryOrder.name}
             </h1>
             <p className="text-sm text-gray-500">
-              This request is to dispatch items from{" "}
+              {t("delivery_fetch_dispatch_from")}{" "}
               <span className="font-medium">
                 {deliveryOrder.supplier?.name ??
                   deliveryOrder.origin?.name ??
                   "—"}
               </span>
-              {" to "}
+              {" "}{t("delivery_fetch_to")}{" "}
               <span className="font-medium">
                 {deliveryOrder.destination.name}
               </span>
@@ -392,21 +390,21 @@ export default function DeliveryOrderFetch({
       <div className="border border-gray-200 rounded-lg bg-white p-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-500">Deliver To</p>
+            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_deliver_to")}</p>
             <p className="text-lg font-semibold text-gray-900">
               {deliveryOrder.destination.name}
             </p>
           </div>
           {deliveryOrder.supplier && (
             <div>
-              <p className="text-sm font-medium text-gray-500">Supplier</p>
+              <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_supplier")}</p>
               <p className="text-lg font-semibold text-gray-900">
                 {deliveryOrder.supplier.name}
               </p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">Status</p>
+            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_status")}</p>
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}
             >
@@ -416,12 +414,12 @@ export default function DeliveryOrderFetch({
           </div>
           {deliveryOrder.note && (
             <div>
-              <p className="text-sm font-medium text-gray-500">Note</p>
+              <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_note")}</p>
               <p className="text-sm text-gray-700">{deliveryOrder.note}</p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">Created By</p>
+            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_created_by")}</p>
             <p className="text-base font-semibold text-gray-900">
               {deliveryOrder.created_by.first_name}{" "}
               {deliveryOrder.created_by.last_name}
@@ -431,7 +429,7 @@ export default function DeliveryOrderFetch({
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">Tags</p>
+            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_tags")}</p>
             <div className="flex flex-wrap gap-1 mt-1">
               {deliveryOrder.tags?.length > 0 ? (
                 deliveryOrder.tags.map((tag) => (
@@ -443,7 +441,7 @@ export default function DeliveryOrderFetch({
                   </span>
                 ))
               ) : (
-                <span className="text-sm text-gray-400"># Add Tags</span>
+                <span className="text-sm text-gray-400">{t("delivery_fetch_add_tags")}</span>
               )}
             </div>
           </div>
