@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Trash2, AlertCircle, ArrowLeft, CircleAlertIcon } from "lucide-react";
+import {
+  Trash2,
+  AlertCircle,
+  CircleCheck,
+  CloudOff,
+  RefreshCw,
+} from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -364,6 +370,7 @@ export default function AddSupplyDeliveryForm({
   supplierId,
   onSuccess,
   goBackToDeliveryPage,
+  supplyDeliveriesCount,
   inwardRecordId: propInwardRecordId,
 }: {
   facilityId: string;
@@ -372,6 +379,7 @@ export default function AddSupplyDeliveryForm({
   supplierId?: string;
   onSuccess: () => void;
   goBackToDeliveryPage: () => void;
+  supplyDeliveriesCount: number;
   inwardRecordId?: string;
 }) {
   const [rows, setRows] = useState<RowItem[]>([]);
@@ -388,6 +396,8 @@ export default function AddSupplyDeliveryForm({
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
   const recordDeliveryId = "b50e5dc8-4a28-47d1-bcc7-7640e506f841";
+
+  const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
 
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
@@ -636,22 +646,31 @@ export default function AddSupplyDeliveryForm({
   }
 
   if (rows.length === 0) {
+    const allConsumed = supplyDeliveriesCount > 0;
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <CircleAlertIcon className="size-8 text-gray-400" />
+        {allConsumed ? (
+          <CircleCheck className="size-8 text-green-500" />
+        ) : (
+          <CloudOff className="size-8 text-gray-400" />
+        )}
         <p className="text-sm font-medium text-gray-700">
-          No items from Eaushadhi
+          {allConsumed
+            ? "All items have been added"
+            : "No items from Eaushadhi"}
         </p>
         <p className="text-xs text-gray-500">
-          Eaushadhi returned no items. Try checking later.
+          {allConsumed
+            ? "All available items have been added. Sync again if new stock has arrived."
+            : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
         </p>
         <Button
           variant="outline"
-          onClick={goBackToDeliveryPage}
+          onClick={addRow}
           className="flex items-center gap-2"
         >
-          <ArrowLeft className="size-4" />
-          Go back
+          <RefreshCw className="size-4" />
+          {allConsumed ? "Check for new items" : "Retry sync"}
         </Button>
       </div>
     );

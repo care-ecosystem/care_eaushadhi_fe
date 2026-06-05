@@ -690,6 +690,7 @@ export default function DeliveryOrderShow({
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
                   goBackToDeliveryPage={goBackToDeliveryPage}
+                  supplyDeliveriesCount={supplyDeliveries?.length}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["supplyDeliveries", deliveryOrderId],
