@@ -1,5 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
-import { PlusCircle, Trash2, AlertCircle, RefreshCw, CloudOff, CircleCheck } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  Trash2,
+  AlertCircle,
+  RefreshCw,
+  CloudOff,
+  CircleCheck,
+} from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,14 +19,8 @@ import {
 } from "@/components/ui/select";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
-import {
-  useSuperBatchRequest,
-  SuperBatchError,
-} from "@/apis/query";
-import {
-  RowDeliveryInput,
-  RowDeliveryBatchContext,
-} from "@/apis";
+import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { RowDeliveryInput, RowDeliveryBatchContext } from "@/apis";
 import {
   buildChainBatch,
   chunkRows,
@@ -80,10 +80,28 @@ interface InwardItem {
   quantity_received_current: string;
   unit_pack: string;
   quantity_in_units?: string;
+  warehouse_name: string;
 }
 
 interface InwardRecord {
   items: InwardItem[];
+}
+
+interface SupplierMapping {
+  id: string;
+  supplier_id: string;
+  eaushadhi_warehouse_name: string;
+  is_default: boolean;
+}
+
+interface InstituteMappingResponse {
+  count: number;
+  results: Array<{
+    id: string;
+    facility_id: string;
+    eaushadhi_institute_id: string;
+    supplier_mappings: SupplierMapping[];
+  }>;
 }
 
 const EMPTY_ROW = (): RowItem => ({
@@ -357,6 +375,7 @@ export default function AddSupplyDeliveryForm({
   facilityId,
   deliveryOrderId,
   destination,
+  supplierId,
   onSuccess,
   supplyDeliveriesCount,
   inwardRecordId: propInwardRecordId,
@@ -364,6 +383,7 @@ export default function AddSupplyDeliveryForm({
   facilityId: string;
   deliveryOrderId: string;
   destination: string;
+  supplierId?: string;
   onSuccess: () => void;
   supplyDeliveriesCount: number;
   inwardRecordId?: string;
@@ -393,7 +413,33 @@ export default function AddSupplyDeliveryForm({
 
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
 
-  // Fetch inward record and prefill rows
+  // Step 1: Fetch institute mappings to get supplier warehouse name
+  const { data: instituteMappings } = useQuery({
+    queryKey: ["instituteMappings", facilityId],
+    queryFn: () =>
+      request<InstituteMappingResponse>(
+        `/api/care_eaushadhi/institute-mappings/`,
+        HttpMethod.GET,
+        {
+          facility_id: facilityId,
+        },
+      ),
+    enabled: !!facilityId,
+  });
+
+  // Extract warehouse name from supplier mappings
+  const supplierWarehouseName = useMemo(() => {
+    if (!supplierId || !instituteMappings?.results?.[0]) return null;
+
+    const mappingResult = instituteMappings.results[0];
+    const supplierMapping = mappingResult.supplier_mappings.find(
+      (sm) => sm.supplier_id === supplierId,
+    );
+
+    return supplierMapping?.eaushadhi_warehouse_name || null;
+  }, [supplierId, instituteMappings]);
+
+  // Step 2: Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
     queryFn: () =>
@@ -404,11 +450,17 @@ export default function AddSupplyDeliveryForm({
     enabled: !!inwardRecordId,
   });
 
+  // Step 3: Filter and prefill rows based on warehouse name
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
     try {
-      const newRows = inwardRecord.items.map((item) => {
+      // Filter items by warehouse name
+      const filteredItems = inwardRecord.items.filter(
+        (item) => item.warehouse_name === supplierWarehouseName,
+      );
+
+      const newRows = filteredItems.map((item) => {
         const expiryDate = item.expiry_date
           ? item.expiry_date.split("T")[0]
           : "";
@@ -443,7 +495,7 @@ export default function AddSupplyDeliveryForm({
         "Failed to prefill data from inward record. Please check the data and try again.",
       );
     }
-  }, [inwardRecord]);
+  }, [inwardRecord, supplierWarehouseName]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -600,30 +652,35 @@ export default function AddSupplyDeliveryForm({
   }
 
   if (rows.length === 0) {
-  const allConsumed = supplyDeliveriesCount > 0;
-  return (
-    <div className="flex flex-col items-center gap-3 py-8 text-center">
-      {allConsumed
-        ? <CircleCheck className="size-8 text-green-500" />
-        : <CloudOff className="size-8 text-gray-400" />}
-      <p className="text-sm font-medium text-gray-700">
-        {allConsumed
-          ? "All items have been added"
-          : "No items from Eaushadhi"}
-      </p>
-      <p className="text-xs text-gray-500">
-        {allConsumed
-          ? "All available items have been added. Sync again if new stock has arrived."
-          : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
-      </p>
-      <Button variant="outline" onClick={addRow}
-        className="flex items-center gap-2">
-        <RefreshCw className="size-4" />
-        {allConsumed ? "Check for new items" : "Retry sync"}
-      </Button>
-    </div>
-  );
-}
+    const allConsumed = supplyDeliveriesCount > 0;
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        {allConsumed ? (
+          <CircleCheck className="size-8 text-green-500" />
+        ) : (
+          <CloudOff className="size-8 text-gray-400" />
+        )}
+        <p className="text-sm font-medium text-gray-700">
+          {allConsumed
+            ? "All items have been added"
+            : "No items from Eaushadhi"}
+        </p>
+        <p className="text-xs text-gray-500">
+          {allConsumed
+            ? "All available items have been added. Sync again if new stock has arrived."
+            : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
+        </p>
+        <Button
+          variant="outline"
+          onClick={addRow}
+          className="flex items-center gap-2"
+        >
+          <RefreshCw className="size-4" />
+          {allConsumed ? "Check for new items" : "Retry sync"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

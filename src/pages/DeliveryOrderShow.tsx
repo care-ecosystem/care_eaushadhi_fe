@@ -1,16 +1,3 @@
-/**
- * Reference Source:
- * care_fe/src/pages/Facility/services/inventory/externalSupply/deliveryOrder/DeliveryOrderShow.tsx
- *
- * Notes:
- * - Adapted from CARE FE external supply delivery order module
- *
- * MODIFICATIONS:
- * - Added inward_record_id URL parameter support
- * - Passes inwardRecordId to AddSupplyDeliveryForm component for prefilling
- * - Updated component signature to accept inwardRecordId prop
- */
-
 import { useState, useMemo } from "react";
 import {
   ChevronLeft,
@@ -168,6 +155,7 @@ export default function DeliveryOrderShow({
     },
   });
 
+  const supplierId = deliveryOrder?.supplier?.id;
   const supplyDeliveries = supplyDeliveriesData?.results ?? [];
   const isRequester = locationId === deliveryOrder?.destination.id;
 
@@ -323,8 +311,8 @@ export default function DeliveryOrderShow({
                 {deliveryOrder.supplier?.name ??
                   deliveryOrder.origin?.name ??
                   "—"}
-              </span>
-              {" "}{t("delivery_show_to")}{" "}
+              </span>{" "}
+              {t("delivery_show_to")}{" "}
               <span className="font-medium">
                 {deliveryOrder.destination.name}
               </span>
@@ -337,7 +325,9 @@ export default function DeliveryOrderShow({
           {/* Print */}
           <Button
             variant="outline"
-            onClick={() => navigateToDeliveryPrint(facilityId, locationId, deliveryOrderId)}
+            onClick={() =>
+              navigateToDeliveryPrint(facilityId, locationId, deliveryOrderId)
+            }
             className="flex items-center gap-2"
           >
             <Printer className="size-4" /> {t("delivery_show_print")}
@@ -364,7 +354,9 @@ export default function DeliveryOrderShow({
               disabled={isUpdating || supplyDeliveries.length === 0}
               className="!bg-green-700 hover:!bg-green-800 !text-white !opacity-100"
             >
-              {isUpdating ? t("delivery_show_updating") : t("delivery_show_mark_approved")}
+              {isUpdating
+                ? t("delivery_show_updating")
+                : t("delivery_show_mark_approved")}
             </Button>
           )}
 
@@ -376,7 +368,9 @@ export default function DeliveryOrderShow({
                 isUpdating || isUpserting || selectedDeliveries.length !== 0
               }
             >
-              {isUpdating ? t("delivery_show_updating") : t("delivery_show_mark_completed")}
+              {isUpdating
+                ? t("delivery_show_updating")
+                : t("delivery_show_mark_completed")}
             </Button>
           )}
 
@@ -424,21 +418,27 @@ export default function DeliveryOrderShow({
       <div className="border border-gray-200 rounded-lg bg-white p-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_show_deliver_to")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_show_deliver_to")}
+            </p>
             <p className="text-lg font-semibold text-gray-900">
               {deliveryOrder.destination.name}
             </p>
           </div>
           {deliveryOrder.supplier && (
             <div>
-              <p className="text-sm font-medium text-gray-500">{t("delivery_show_supplier")}</p>
+              <p className="text-sm font-medium text-gray-500">
+                {t("delivery_show_supplier")}
+              </p>
               <p className="text-lg font-semibold text-gray-900">
                 {deliveryOrder.supplier.name}
               </p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_show_status")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_show_status")}
+            </p>
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}
             >
@@ -448,12 +448,16 @@ export default function DeliveryOrderShow({
           </div>
           {deliveryOrder.note && (
             <div>
-              <p className="text-sm font-medium text-gray-500">{t("delivery_show_note")}</p>
+              <p className="text-sm font-medium text-gray-500">
+                {t("delivery_show_note")}
+              </p>
               <p className="text-sm text-gray-700">{deliveryOrder.note}</p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_show_created_by")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_show_created_by")}
+            </p>
             <p className="text-base font-semibold text-gray-900">
               {deliveryOrder.created_by.first_name}{" "}
               {deliveryOrder.created_by.last_name}
@@ -463,7 +467,9 @@ export default function DeliveryOrderShow({
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_show_tags")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_show_tags")}
+            </p>
             <div className="flex flex-wrap gap-1 mt-1">
               {deliveryOrder.tags?.length > 0 ? (
                 deliveryOrder.tags.map((tag) => (
@@ -475,7 +481,9 @@ export default function DeliveryOrderShow({
                   </span>
                 ))
               ) : (
-                <span className="text-sm text-gray-400">{t("delivery_show_add_tags")}</span>
+                <span className="text-sm text-gray-400">
+                  {t("delivery_show_add_tags")}
+                </span>
               )}
             </div>
           </div>
@@ -502,7 +510,9 @@ export default function DeliveryOrderShow({
                   isUpdating || isUpserting || selectedDeliveries.length === 0
                 }
               >
-              {isUpserting ? t("delivery_show_updating") : t("delivery_show_receive_update_stock")}
+                {isUpserting
+                  ? t("delivery_show_updating")
+                  : t("delivery_show_receive_update_stock")}
               </Button>
               <div className="relative">
                 <Button
@@ -519,14 +529,14 @@ export default function DeliveryOrderShow({
                       onClick={handleMarkAsAbandoned}
                       disabled={isUpserting || selectedDeliveries.length === 0}
                     >
-                    {t("delivery_show_mark_abandoned")}
+                      {t("delivery_show_mark_abandoned")}
                     </button>
                     <button
                       className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
                       onClick={handleMarkAsDamaged}
                       disabled={isUpserting || selectedDeliveries.length === 0}
                     >
-                    {t("delivery_show_mark_damaged")}
+                      {t("delivery_show_mark_damaged")}
                     </button>
                   </div>
                 )}
@@ -560,9 +570,9 @@ export default function DeliveryOrderShow({
                                   (d) => d.status === "in_progress",
                                 ).length > 0 &&
                                 selectedDeliveries.length ===
-                                supplyDeliveries.filter(
-                                  (d) => d.status === "in_progress",
-                                ).length
+                                  supplyDeliveries.filter(
+                                    (d) => d.status === "in_progress",
+                                  ).length
                               }
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -579,22 +589,22 @@ export default function DeliveryOrderShow({
                           </th>
                         )}
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_product")}
+                          {t("delivery_show_product")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_batch")}
+                          {t("delivery_show_batch")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_expiry")}
+                          {t("delivery_show_expiry")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_qty")}
+                          {t("delivery_show_qty")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_condition")}
+                          {t("delivery_show_condition")}
                         </th>
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
-                        {t("delivery_show_status_col")}
+                          {t("delivery_show_status_col")}
                         </th>
                       </tr>
                     </thead>
@@ -635,8 +645,8 @@ export default function DeliveryOrderShow({
                           <td className="px-3 py-2 text-gray-600">
                             {d.supplied_item?.expiration_date
                               ? new Date(
-                                d.supplied_item.expiration_date,
-                              ).toLocaleDateString()
+                                  d.supplied_item.expiration_date,
+                                ).toLocaleDateString()
                               : "—"}
                           </td>
                           <td className="px-3 py-2 text-gray-600">
@@ -649,12 +659,13 @@ export default function DeliveryOrderShow({
                           </td>
                           <td className="px-3 py-2">
                             <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${d.status === "completed"
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${
+                                d.status === "completed"
                                   ? "bg-green-100 text-green-700"
                                   : d.status === "abandoned"
                                     ? "bg-red-100 text-red-700"
                                     : "bg-yellow-100 text-yellow-700"
-                                }`}
+                              }`}
                             >
                               {d.status}
                             </span>
@@ -671,6 +682,7 @@ export default function DeliveryOrderShow({
                 <AddSupplyDeliveryForm
                   facilityId={facilityId}
                   deliveryOrderId={deliveryOrderId}
+                  supplierId={supplierId}
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
                   supplyDeliveriesCount={supplyDeliveries?.length}
@@ -692,24 +704,29 @@ export default function DeliveryOrderShow({
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
-              {t("delivery_show_confirm_title")}
+                {t("delivery_show_confirm_title")}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-              {t("delivery_show_confirm_subtitle", { count: selectedDeliveries.length })}
+                {t("delivery_show_confirm_subtitle", {
+                  count: selectedDeliveries.length,
+                })}
               </p>
             </div>
 
             {/* Receiving Status */}
             <div className="space-y-3 bg-gray-50 p-4 rounded-md">
-              <Label className="text-sm font-medium">{t("delivery_show_receiving_status")}</Label>
+              <Label className="text-sm font-medium">
+                {t("delivery_show_receiving_status")}
+              </Label>
               <div className="flex gap-3 flex-wrap">
                 {(["completed", "abandoned"] as const).map((s) => (
                   <label
                     key={s}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${confirmDialog.status === s
+                    className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
+                      confirmDialog.status === s
                         ? "border-primary-600 bg-primary-50"
                         : "border-gray-300 bg-white hover:border-gray-400"
-                      }`}
+                    }`}
                   >
                     <input
                       type="radio"
@@ -726,15 +743,18 @@ export default function DeliveryOrderShow({
               {/* Condition — only when completed */}
               {confirmDialog.status === "completed" && (
                 <div className="space-y-3 mt-2">
-                  <Label className="text-sm font-medium">{t("delivery_show_item_condition")}</Label>
+                  <Label className="text-sm font-medium">
+                    {t("delivery_show_item_condition")}
+                  </Label>
                   <div className="flex gap-3 flex-wrap">
                     {(["normal", "damaged"] as const).map((c) => (
                       <label
                         key={c}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${confirmDialog.condition === c
+                        className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
+                          confirmDialog.condition === c
                             ? "border-primary-600 bg-primary-50"
                             : "border-gray-300 bg-white hover:border-gray-400"
-                          }`}
+                        }`}
                       >
                         <input
                           type="radio"
@@ -761,7 +781,7 @@ export default function DeliveryOrderShow({
                   setConfirmDialog((prev) => ({ ...prev, open: false }))
                 }
               >
-              {t("delivery_show_cancel")}
+                {t("delivery_show_cancel")}
               </Button>
               <Button
                 onClick={handleSubmitDialog}
@@ -772,7 +792,9 @@ export default function DeliveryOrderShow({
                     : ""
                 }
               >
-              {isUpserting ? t("delivery_show_updating") : t("delivery_show_confirm")}
+                {isUpserting
+                  ? t("delivery_show_updating")
+                  : t("delivery_show_confirm")}
               </Button>
             </div>
           </div>
@@ -784,10 +806,14 @@ export default function DeliveryOrderShow({
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">
-            {orderStatusDialog.status === "entered_in_error" ? t("delivery_show_entered_in_error_title") : t("delivery_show_abandoned_title")}
+              {orderStatusDialog.status === "entered_in_error"
+                ? t("delivery_show_entered_in_error_title")
+                : t("delivery_show_abandoned_title")}
             </h2>
             <p className="text-sm text-gray-600">
-            {orderStatusDialog.status === "entered_in_error" ? t("delivery_show_entered_in_error_desc") : t("delivery_show_abandoned_desc")}
+              {orderStatusDialog.status === "entered_in_error"
+                ? t("delivery_show_entered_in_error_desc")
+                : t("delivery_show_abandoned_desc")}
             </p>
             <div className="flex justify-end gap-3">
               <Button
@@ -796,7 +822,7 @@ export default function DeliveryOrderShow({
                   setOrderStatusDialog({ open: false, status: null })
                 }
               >
-              {t("delivery_show_cancel")}
+                {t("delivery_show_cancel")}
               </Button>
               <Button
                 className="bg-red-600 hover:bg-red-700 text-white"
@@ -806,7 +832,9 @@ export default function DeliveryOrderShow({
                     updateStatus(orderStatusDialog.status);
                 }}
               >
-              {isUpdating ? t("delivery_show_updating") : t("delivery_show_confirm")}
+                {isUpdating
+                  ? t("delivery_show_updating")
+                  : t("delivery_show_confirm")}
               </Button>
             </div>
           </div>
