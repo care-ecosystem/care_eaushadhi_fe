@@ -24,7 +24,7 @@ import {
  * Higher = fewer HTTP requests but larger payloads
  * Lower = more HTTP requests but smaller payloads
  */
-export const SUPER_BATCH_CHAIN_SIZE = 8;
+export const SUPER_BATCH_CHAIN_SIZE = 6;
 
 // ============================================================================
 // TYPES

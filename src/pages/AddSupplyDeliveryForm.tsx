@@ -3,6 +3,7 @@
  * - Auto-populates from inward records
  * - Product mapping selection with eAushadhi display
  * - Dynamic quantity calculations (pack size × quantity)
+ * - Creates record delivery on component mount
  */
 import { useState, useEffect, useCallback } from "react";
 import { PlusCircle, Trash2, AlertCircle } from "lucide-react";
@@ -87,6 +88,13 @@ interface InwardItem {
 
 interface InwardRecord {
   items: InwardItem[];
+}
+
+interface RecordDeliveryResponse {
+  id: string;
+  inward_record_id: string;
+  delivery_order_id: string;
+  facility_id: string;
 }
 
 const EMPTY_ROW = (): RowItem => ({
@@ -348,6 +356,9 @@ export default function AddSupplyDeliveryForm({
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
+  const [recordDeliveryId, setRecordDeliveryId] = useState<string>("");
+  const [isCreatingRecordDelivery, setIsCreatingRecordDelivery] =
+    useState(false);
 
   // Extract inward_record_id from URL query params
   useEffect(() => {
@@ -357,7 +368,36 @@ export default function AddSupplyDeliveryForm({
   }, []);
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
-  const recordDeliveryId = "b50e5dc8-4a28-47d1-bcc7-7640e506f841";
+
+  // Create record delivery when component mounts (only once)
+  useEffect(() => {
+    if (!inwardRecordId || !facilityId || !deliveryOrderId || recordDeliveryId) {
+      return;
+    }
+
+    const createRecordDelivery = async () => {
+      setIsCreatingRecordDelivery(true);
+      try {
+        const response = await request<RecordDeliveryResponse>(
+          "/api/care_eaushadhi/record-deliveries/",
+          HttpMethod.POST,
+          {
+            inward_record_id: inwardRecordId,
+            facility_id: facilityId,
+            delivery_order_id: deliveryOrderId,
+          },
+        );
+        setRecordDeliveryId(response.id);
+      } catch (err) {
+        console.error("Error creating record delivery:", err);
+        toast.error("Failed to create record delivery");
+      } finally {
+        setIsCreatingRecordDelivery(false);
+      }
+    };
+
+    createRecordDelivery();
+  }, [inwardRecordId, facilityId, deliveryOrderId, recordDeliveryId]);
 
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
@@ -462,7 +502,7 @@ export default function AddSupplyDeliveryForm({
     }
 
     if (!recordDeliveryId) {
-      toast.error("Missing record delivery reference");
+      toast.error("Record delivery ID not yet loaded. Please wait...");
       return;
     }
 
@@ -490,12 +530,12 @@ export default function AddSupplyDeliveryForm({
       // Step 2: Split rows into chunks
       const chunks = chunkRows(deliveryInputs);
 
-      // Step 3: Create shared context
+      // Step 3: Create shared context (NOW WITH DYNAMIC recordDeliveryId!)
       const ctx: RowDeliveryBatchContext = {
         facilityId,
         destination,
         deliveryOrderId,
-        recordDeliveryId,
+        recordDeliveryId, // ✅ Dynamic from API response
         eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
       };
 
@@ -537,6 +577,18 @@ export default function AddSupplyDeliveryForm({
     } finally {
       setIsProcessing(false);
     }
+  }
+
+  // Show loading while creating record delivery
+  if (isCreatingRecordDelivery) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border border-gray-200 border-t-gray-900" />
+        <p className="text-sm font-medium text-gray-700">
+          Creating delivery record...
+        </p>
+      </div>
+    );
   }
 
   if (inwardRecordId && isLoadingInward) {
