@@ -6,7 +6,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { PlusCircle, Trash2, AlertCircle } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -436,6 +436,20 @@ export default function AddSupplyDeliveryForm({
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
+  // Mutation for recording deliveries in eAushadhi system
+  const { mutateAsync: recordDeliveries } = useMutation({
+    mutationFn: async (payload: {
+      inward_record_id: string;
+      facility_id: string;
+      delivery_order_id: string;
+    }) =>
+      request<{ id: string }>(
+        `/api/care_eaushadhi/record-deliveries/`,
+        HttpMethod.POST,
+        payload,
+      ),
+  });
+
   function validate(): boolean {
     for (const [i, row] of rows.entries()) {
       const n = i + 1;
@@ -461,16 +475,28 @@ export default function AddSupplyDeliveryForm({
       return;
     }
 
-    if (!recordDeliveryId) {
-      toast.error("Missing record delivery reference");
-      return;
-    }
-
     if (!validate()) return;
 
     setIsProcessing(true);
 
     try {
+      // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
+      let finalRecordDeliveryId = recordDeliveryId;
+
+      if (inwardRecordId) {
+        const response = await recordDeliveries({
+          inward_record_id: inwardRecordId,
+          facility_id: facilityId,
+          delivery_order_id: deliveryOrderId,
+        });
+        finalRecordDeliveryId = response.id;
+      }
+
+      if (!finalRecordDeliveryId) {
+        toast.error("Missing record delivery reference");
+        return;
+      }
+
       // Step 1: Convert RowItem[] to RowDeliveryInput[]
       const deliveryInputs: RowDeliveryInput[] = rows.map((row) => ({
         productKnowledgeSlug: row.product_knowledge_slug,
@@ -495,7 +521,7 @@ export default function AddSupplyDeliveryForm({
         facilityId,
         destination,
         deliveryOrderId,
-        recordDeliveryId,
+        recordDeliveryId: finalRecordDeliveryId,
         eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
       };
 
