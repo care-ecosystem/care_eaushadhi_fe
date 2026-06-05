@@ -36,12 +36,18 @@ interface InstituteMappingsResponse {
   supplier_mappings: SupplierMapping[];
 }
 
-// Returns today's date formatted as MM/DD/YYYY
+// Returns today's date formatted as YYYY-MM-DD (ISO format for date input)
 function getTodayFormatted() {
   const today = new Date();
+  const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, "0");
   const dd = String(today.getDate()).padStart(2, "0");
-  const yyyy = today.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Converts date from YYYY-MM-DD to MM/DD/YYYY format for URL
+function formatDateForURL(isoDate: string): string {
+  const [yyyy, mm, dd] = isoDate.split("-");
   return `${mm}/${dd}/${yyyy}`;
 }
 
@@ -87,8 +93,9 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
       ),
     onSuccess: (data: any) => {
       toast.success(t("fetch_page_success"));
+      const formattedDate = formatDateForURL(inwardDate);
       navigate(
-        `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${inwardDate}`,
+        `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${formattedDate}`,
       );
     },
     onError: () => {
@@ -149,19 +156,21 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         </div>
 
         {/* Inward Date */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray-900">
-            {t("fetch_page_inward_date_label")} <span className="text-red-500">*</span>
-          </label>
-          <Input
-            className="h-9 bg-white text-gray-500"
-            value={inwardDate}
-            onChange={(e) => setInwardDate(e.target.value)}
-          // readOnly
-          />
-          <p className="text-xs text-gray-500">
-            {t("fetch_page_inward_date_hint")}
-          </p>
+        <div className="grid sm:grid-cols-2 gap-4 items-start">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-gray-900">
+              {t("fetch_page_inward_date_label")} <span className="text-red-500">*</span>
+            </label>
+            <Input
+              type="date"
+              className="h-9 bg-white"
+              value={inwardDate}
+              onChange={(e) => setInwardDate(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              {t("fetch_page_inward_date_hint")}
+            </p>
+          </div>
         </div>
 
         {/* Note */}
