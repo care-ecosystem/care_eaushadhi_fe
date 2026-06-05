@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import {
   ChevronLeft,
   EllipsisVertical,
@@ -121,7 +121,6 @@ export default function DeliveryOrderShow({
       `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`,
     );
   }, [facilityId, locationId]);
-
   // Fetch delivery order
   const { data: deliveryOrder, isLoading } = useQuery({
     queryKey: ["deliveryOrder", deliveryOrderId],
@@ -689,7 +688,7 @@ export default function DeliveryOrderShow({
                   supplierId={supplierId}
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
-                  goBackToDeliveryPage={goBackToDeliveryPage}
+                  supplyDeliveriesCount={supplyDeliveries?.length}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["supplyDeliveries", deliveryOrderId],
