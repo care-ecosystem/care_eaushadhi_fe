@@ -1,11 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  Trash2,
-  AlertCircle,
-  RefreshCw,
-  CloudOff,
-  CircleCheck,
-} from "lucide-react";
+import { Trash2, AlertCircle, ArrowLeft, CircleAlertIcon } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -40,14 +34,6 @@ interface ProductMapping {
   eaushadhi_drug_name: string;
   eaushadhi_drug_id: string;
   product_knowledge: ProductKnowledge;
-}
-
-interface Product {
-  id: string;
-  batch?: { lot_number: string };
-  expiration_date?: string;
-  standard_pack_size?: number;
-  charge_item_definition?: { slug: string };
 }
 
 interface RowItem {
@@ -377,7 +363,7 @@ export default function AddSupplyDeliveryForm({
   destination,
   supplierId,
   onSuccess,
-  supplyDeliveriesCount,
+  goBackToDeliveryPage,
   inwardRecordId: propInwardRecordId,
 }: {
   facilityId: string;
@@ -385,7 +371,7 @@ export default function AddSupplyDeliveryForm({
   destination: string;
   supplierId?: string;
   onSuccess: () => void;
-  supplyDeliveriesCount: number;
+  goBackToDeliveryPage: () => void;
   inwardRecordId?: string;
 }) {
   const [rows, setRows] = useState<RowItem[]>([]);
@@ -410,8 +396,6 @@ export default function AddSupplyDeliveryForm({
   const removeRow = useCallback((index: number) => {
     setRows((prev) => prev.filter((_, i) => i !== index));
   }, []);
-
-  const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
 
   // Step 1: Fetch institute mappings to get supplier warehouse name
   const { data: instituteMappings } = useQuery({
@@ -652,31 +636,22 @@ export default function AddSupplyDeliveryForm({
   }
 
   if (rows.length === 0) {
-    const allConsumed = supplyDeliveriesCount > 0;
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
-        {allConsumed ? (
-          <CircleCheck className="size-8 text-green-500" />
-        ) : (
-          <CloudOff className="size-8 text-gray-400" />
-        )}
+        <CircleAlertIcon className="size-8 text-gray-400" />
         <p className="text-sm font-medium text-gray-700">
-          {allConsumed
-            ? "All items have been added"
-            : "No items from Eaushadhi"}
+          No items from Eaushadhi
         </p>
         <p className="text-xs text-gray-500">
-          {allConsumed
-            ? "All available items have been added. Sync again if new stock has arrived."
-            : "Eaushadhi returned no items. This could be a sync delay — try again shortly."}
+          Eaushadhi returned no items. Try checking later.
         </p>
         <Button
           variant="outline"
-          onClick={addRow}
+          onClick={goBackToDeliveryPage}
           className="flex items-center gap-2"
         >
-          <RefreshCw className="size-4" />
-          {allConsumed ? "Check for new items" : "Retry sync"}
+          <ArrowLeft className="size-4" />
+          Go back
         </Button>
       </div>
     );
@@ -731,7 +706,7 @@ export default function AddSupplyDeliveryForm({
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => setRows([])}
+            onClick={goBackToDeliveryPage}
             disabled={isProcessing}
           >
             Cancel

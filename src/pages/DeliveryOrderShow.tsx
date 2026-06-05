@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   ChevronLeft,
   EllipsisVertical,
@@ -116,7 +116,11 @@ export default function DeliveryOrderShow({
   const [itemsDropdownOpen, setItemsDropdownOpen] = useState(false);
   const [orderDropdownOpen, setOrderDropdownOpen] = useState(false);
 
-  const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
+  const goBackToDeliveryPage = useCallback(() => {
+    navigate(
+      `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`,
+    );
+  }, [facilityId, locationId]);
 
   // Fetch delivery order
   const { data: deliveryOrder, isLoading } = useQuery({
@@ -296,7 +300,7 @@ export default function DeliveryOrderShow({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(returnPath)}
+            onClick={goBackToDeliveryPage}
             className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
           >
             <ChevronLeft className="size-4" />
@@ -685,7 +689,7 @@ export default function DeliveryOrderShow({
                   supplierId={supplierId}
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
-                  supplyDeliveriesCount={supplyDeliveries?.length}
+                  goBackToDeliveryPage={goBackToDeliveryPage}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
                       queryKey: ["supplyDeliveries", deliveryOrderId],
