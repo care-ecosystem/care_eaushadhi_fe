@@ -1,9 +1,3 @@
-/**
- * Supply Delivery Form with E-Aushadhi Integration
- * - Auto-populates from inward records
- * - Product mapping selection with eAushadhi display
- * - Dynamic quantity calculations (pack size × quantity)
- */
 import { useState, useEffect, useCallback } from "react";
 import { PlusCircle, Trash2, AlertCircle } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -44,6 +38,7 @@ interface ProductKnowledge {
 interface ProductMapping {
   id: string;
   eaushadhi_drug_name: string;
+  eaushadhi_drug_id: string;
   product_knowledge: ProductKnowledge;
 }
 
@@ -72,12 +67,14 @@ interface RowItem {
   accepted_qty_in_units: string;
   quantity_in_units: string;
   eaushadhi_drug_name?: string;
+  eaushadhi_drug_id?: string;
   product_mapping_id?: string;
 }
 
 interface InwardItem {
   id: string;
   drug_name: string;
+  drug_id: string;
   batch_no: string;
   expiry_date: string;
   quantity_received_current: string;
@@ -106,39 +103,107 @@ const EMPTY_ROW = (): RowItem => ({
   accepted_qty_in_units: "1",
   quantity_in_units: "",
   eaushadhi_drug_name: "",
+  eaushadhi_drug_id: "",
   product_mapping_id: "",
 });
 
-// ─── Product Mapping Selector ──────────────────────────────────────────────
+// ─── Product Mapping Selector with Lazy Search ──────────────────────────────
 function ProductMappingSelector({
+  facilityId,
+  eaushadhiDrugId,
   value,
-  mappings,
-  isLoadingMappings,
+  isLoading,
   onSelect,
 }: {
+  facilityId: string;
+  eaushadhiDrugId: string;
   value: string;
-  mappings: ProductMapping[];
-  isLoadingMappings: boolean;
+  isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Fetch product mappings when dropdown opens
+  const fetchMappings = useCallback(async () => {
+    if (!eaushadhiDrugId || isSearching) return;
+
+    setIsSearching(true);
+    try {
+      const response = await request<{ results: ProductMapping[] }>(
+        `/api/care_eaushadhi/product-mappings/search/`,
+        HttpMethod.GET,
+        {
+          facility_id: facilityId,
+          eaushadhi_drug_id: eaushadhiDrugId,
+        },
+      );
+      setSearchResults(response.results || []);
+    } catch (err) {
+      console.error("Error fetching product mappings:", err);
+      toast.error("Failed to load product options");
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [facilityId, eaushadhiDrugId, isSearching]);
+
+  // Fetch mappings when dropdown opens
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (open && searchResults.length === 0 && !isSearching) {
+      fetchMappings();
+    }
+  };
+
+  const selectedMapping = searchResults.find((m) => m.id === value);
+
   return (
     <Select
       value={value}
       onValueChange={(mappingId) => {
-        const mapping = mappings.find((m) => m.id === mappingId);
-        if (mapping) onSelect(mapping);
+        const mapping = searchResults.find((m) => m.id === mappingId);
+        if (mapping) {
+          onSelect(mapping);
+          setIsOpen(false);
+        }
       }}
-      disabled={isLoadingMappings}
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+      disabled={isLoading || !eaushadhiDrugId}
     >
       <SelectTrigger size="sm" className="w-full">
-        <SelectValue placeholder="Select a product" />
+        <SelectValue
+          placeholder={
+            !eaushadhiDrugId
+              ? "No drug selected"
+              : isSearching
+                ? "Loading..."
+                : selectedMapping
+                  ? selectedMapping.product_knowledge.name
+                  : "Select a product"
+          }
+        />
       </SelectTrigger>
       <SelectContent>
-        {mappings.map((mapping) => (
-          <SelectItem key={mapping.id} value={mapping.id}>
-            {mapping.product_knowledge.name}
-          </SelectItem>
-        ))}
+        {isSearching && (
+          <div className="flex items-center justify-center py-4 text-xs text-gray-500">
+            <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
+            Searching...
+          </div>
+        )}
+        {!isSearching && searchResults.length === 0 && (
+          <div className="py-4 text-center text-xs text-gray-500">
+            No products found
+          </div>
+        )}
+        {!isSearching &&
+          searchResults.map((mapping) => (
+            <SelectItem key={mapping.id} value={mapping.id}>
+              {mapping.product_knowledge.name}
+            </SelectItem>
+          ))}
       </SelectContent>
     </Select>
   );
@@ -148,15 +213,11 @@ function ProductMappingSelector({
 function DeliveryRow({
   facilityId,
   row,
-  mappings,
-  isLoadingMappings,
   onChange,
   onRemove,
 }: {
   facilityId: string;
   row: RowItem;
-  mappings: ProductMapping[];
-  isLoadingMappings: boolean;
   onChange: (updated: RowItem) => void;
   onRemove: () => void;
 }) {
@@ -165,6 +226,7 @@ function DeliveryRow({
       onChange({ ...row, [field]: value } as RowItem),
     [row, onChange],
   );
+
   const queryClient = useQueryClient();
 
   // Auto-calculate quantity from pack size and pack quantity
@@ -196,55 +258,15 @@ function DeliveryRow({
     });
   };
 
-  const { data: autoFillData } = useQuery({
-    queryKey: ["products-autofill", facilityId, row.product_knowledge_id],
-    queryFn: () =>
-      request<{ results: Product[] }>(
-        `/api/v1/facility/${facilityId}/product/`,
-        HttpMethod.GET,
-        {
-          product_knowledge: row.product_knowledge_id,
-          ordering: "-created_date",
-          limit: 1,
-          status: "active",
-        },
-      ),
-    enabled: !!row.product_knowledge_id,
-  });
-
-  useEffect(() => {
-    const product = autoFillData?.results?.[0];
-    if (!product || row.is_new_batch || row.batch_number) return;
-    const packSize = product.standard_pack_size ?? 1;
-    onChange({
-      ...row,
-      supplied_item_id: product.id,
-      batch_number: product.batch?.lot_number ?? "",
-      expiry_date: product.expiration_date
-        ? product.expiration_date.slice(0, 10)
-        : "",
-      is_new_batch: false,
-      pack_size: packSize,
-      pack_qty: Math.max(
-        1,
-        Math.floor(
-          parseFloat((product as any)?.quantity_received_current ?? "0") /
-            packSize,
-        ),
-      ),
-    });
-  }, [autoFillData]); // eslint-disable-line
-
-  const isProductSelected = !!row.product_knowledge_slug;
-
   return (
     <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
       <td className="px-2 py-2 min-w-[280px] max-w-[400px]">
         <div className="flex flex-col gap-1">
           <ProductMappingSelector
+            facilityId={facilityId}
+            eaushadhiDrugId={row.eaushadhi_drug_id || ""}
             value={row.product_mapping_id || ""}
-            mappings={mappings}
-            isLoadingMappings={isLoadingMappings}
+            isLoading={false}
             onSelect={handleSelectMapping}
           />
           {row.eaushadhi_drug_name && (
@@ -259,8 +281,8 @@ function DeliveryRow({
           type="text"
           value={row.batch_number}
           onChange={(e) => set("batch_number", e.target.value)}
-          disabled={!isProductSelected}
           className="h-9 text-xs w-full"
+          disabled
         />
       </td>
       <td className="px-2 py-2 shrink-0 min-w-[150px]">
@@ -268,8 +290,8 @@ function DeliveryRow({
           type="date"
           value={row.expiry_date}
           onChange={(e) => set("expiry_date", e.target.value)}
-          disabled={!isProductSelected}
           className="h-9 text-xs w-full"
+          disabled
         />
       </td>
       <td className="px-2 py-2 shrink-0 w-24">
@@ -278,8 +300,8 @@ function DeliveryRow({
           min={1}
           value={row.pack_size}
           onChange={(e) => set("pack_size", parseInt(e.target.value) || 1)}
-          disabled={!isProductSelected}
           className="h-9 text-xs w-full"
+          disabled
         />
       </td>
       <td className="px-2 py-2 shrink-0 w-24">
@@ -288,8 +310,8 @@ function DeliveryRow({
           min={1}
           value={row.pack_qty}
           onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
-          disabled={!isProductSelected}
           className="h-9 text-xs w-full"
+          disabled
         />
       </td>
       <td className="px-2 py-2 shrink-0 w-32">
@@ -308,8 +330,8 @@ function DeliveryRow({
           <Input
             type="number"
             value={row.accepted_qty_in_units}
-            disabled
             className="h-9 text-xs bg-gray-100 text-gray-600 w-full"
+            disabled
           />
           {row.quantity_in_units && (
             <span className="text-xs text-gray-500 truncate">
@@ -369,23 +391,6 @@ export default function AddSupplyDeliveryForm({
 
   const addRow = () => setRows((prev) => [...prev, EMPTY_ROW()]);
 
-  // Fetch product mappings
-  const { data: mappingsData, isLoading: isLoadingMappings } = useQuery({
-    queryKey: ["product-mappings", facilityId, inwardRecordId],
-    queryFn: () =>
-      request<{ results: ProductMapping[] }>(
-        `/api/care_eaushadhi/product-mappings/`,
-        HttpMethod.GET,
-        {
-          facility_id: facilityId,
-          inward_record_id: inwardRecordId,
-          limit: 100,
-        },
-      ),
-    enabled: !!inwardRecordId,
-  });
-  const mappings = mappingsData?.results ?? [];
-
   // Fetch inward record and prefill rows
   const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
     queryKey: ["inwardRecord", inwardRecordId],
@@ -399,6 +404,7 @@ export default function AddSupplyDeliveryForm({
 
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
+
     try {
       const newRows = inwardRecord.items.map((item) => {
         const expiryDate = item.expiry_date
@@ -406,6 +412,7 @@ export default function AddSupplyDeliveryForm({
           : "";
         const packSize = parseFloat(item.unit_pack) || 1;
         const receivedQty = parseFloat(item.quantity_received_current) || 0;
+
         return {
           ...EMPTY_ROW(),
           record_item_id: item.id,
@@ -421,9 +428,11 @@ export default function AddSupplyDeliveryForm({
             ? String(Math.floor(parseFloat(item.quantity_in_units)))
             : "",
           eaushadhi_drug_name: item.drug_name,
+          eaushadhi_drug_id: item.drug_id,
           is_new_batch: true,
         } as RowItem;
       });
+
       setRows(newRows);
       setPrefillError("");
     } catch (err) {
@@ -646,8 +655,6 @@ export default function AddSupplyDeliveryForm({
                 key={index}
                 facilityId={facilityId}
                 row={row}
-                mappings={mappings}
-                isLoadingMappings={isLoadingMappings}
                 onChange={(updated) => updateRow(index, updated)}
                 onRemove={() => removeRow(index)}
               />
@@ -655,7 +662,6 @@ export default function AddSupplyDeliveryForm({
           </tbody>
         </table>
       </div>
-
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <Button
