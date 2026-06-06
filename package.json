@@ -1,7 +1,7 @@
 {
   "name": "care_eaushadhi_fe",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.0.0-beta",
+  "description": "eAushadhi Integration Plugin for CARE - Seamless pharmacy inward stock synchronization from eAushadhi to CARE platform",
   "main": "src/index.ts",
   "scripts": {
     "start": "vite build --watch & vite preview --port 5177",
@@ -13,8 +13,20 @@
     "type": "git",
     "url": "git+https://github.com/care-ecosystem/care_eaushadhi_fe.git"
   },
-  "author": "",
+  "author": "CARE Ecosystem",
   "license": "ISC",
+  "keywords": [
+    "care",
+    "eaushadhi",
+    "pharmacy",
+    "healthcare",
+    "india",
+    "plugin",
+    "micro-frontend",
+    "inventory",
+    "medical-stock"
+  ],
+  "deploymentUrl": "https://eaushadhi.care-ecosystem.workers.dev/assets/remoteEntry.js",
   "type": "module",
   "bugs": {
     "url": "https://github.com/care-ecosystem/care_eaushadhi_fe/issues"
