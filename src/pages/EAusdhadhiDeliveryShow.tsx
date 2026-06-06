@@ -298,8 +298,7 @@ export default function EAusdhadhiDeliveryShow({
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}
             >
-              {deliveryOrder.status.charAt(0).toUpperCase() +
-                deliveryOrder.status.slice(1)}
+              {t(`status_${deliveryOrder.status}`)}
             </span>
           </div>
           {deliveryOrder.note && (
@@ -429,7 +428,7 @@ export default function EAusdhadhiDeliveryShow({
                                     : "bg-yellow-100 text-yellow-700"
                               }`}
                             >
-                              {d.status}
+                            {t(`status_${d.status}`)}
                             </span>
                           </td>
                         </tr>
