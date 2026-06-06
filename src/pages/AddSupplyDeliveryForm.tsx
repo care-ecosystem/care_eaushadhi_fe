@@ -30,6 +30,7 @@ import {
 } from "@/apis/chainBuilder";
 import { I18NNAMESPACE } from "@/lib/contants";
 import { formatDateForEaushadhiAPI } from "@/lib/utils";
+import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
@@ -242,11 +243,15 @@ function DeliveryRow({
   row,
   onChange,
   onRemove,
+  allowDeletingInward,
+  allowUpdatingQuantity,
 }: {
   facilityId: string;
   row: RowItem;
   onChange: (updated: RowItem) => void;
   onRemove: () => void;
+  allowDeletingInward: boolean;
+  allowUpdatingQuantity: boolean;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const set = useCallback(
@@ -351,6 +356,7 @@ function DeliveryRow({
             set("accepted_pack_qty", parseInt(e.target.value) || 0)
           }
           className="h-9 text-xs w-full"
+          disabled={!allowUpdatingQuantity}
         />
       </td>
       <td className="px-2 py-2 shrink-0 w-32">
@@ -368,14 +374,16 @@ function DeliveryRow({
           )}
         </div>
       </td>
-      <td className="px-2 py-2 shrink-0 w-16">
-        <button
-          onClick={onRemove}
-          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
-        >
-          <Trash2 className="size-4" />
-        </button>
-      </td>
+      {allowDeletingInward && (
+        <td className="px-2 py-2 shrink-0 w-16">
+          <button
+            onClick={onRemove}
+            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </td>
+      )}
     </tr>
   );
 }
@@ -402,6 +410,7 @@ export default function AddSupplyDeliveryForm({
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const queryClient = useQueryClient();
+  const { meta } = useInstituteMapping();
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
@@ -758,9 +767,11 @@ export default function AddSupplyDeliveryForm({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
                 {t("supply_form_col_qty_in_units")}
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
-                {t("supply_form_col_actions")}
-              </th>
+              {(meta?.allow_deleting_inward_after_fetch ?? true) && (
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
+                  {t("supply_form_col_actions")}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -771,6 +782,8 @@ export default function AddSupplyDeliveryForm({
                 row={row}
                 onChange={(updated) => updateRow(index, updated)}
                 onRemove={() => removeRow(index)}
+                allowDeletingInward={meta?.allow_deleting_inward_after_fetch ?? true}
+                allowUpdatingQuantity={meta?.allow_updating_quantity_after_received ?? true}
               />
             ))}
           </tbody>
