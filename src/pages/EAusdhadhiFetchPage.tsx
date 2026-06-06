@@ -18,6 +18,7 @@ import { HttpMethod } from "@/apis/types";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
+import { formatDateForEaushadhiAPI, formatDateForURL } from "@/lib/utils";
 
 interface Props {
   facilityId: string;
@@ -41,17 +42,6 @@ function getTodayFormatted() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Converts date from YYYY-MM-DD to MM/DD/YYYY format for URL
-function formatDateForURL(isoDate: string): string {
-  const [yyyy, mm, dd] = isoDate.split("-");
-  return `${mm}/${dd}/${yyyy}`;
-}
-
-// Converts date from YYYY-MM-DD to DD/MM/YYYY format for API
-function formatDateForAPI(isoDate: string): string {
-  const [yyyy, mm, dd] = isoDate.split("-");
-  return `${dd}/${mm}/${yyyy}`;
-}
 
 export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
   const { t } = useTranslation(I18NNAMESPACE);
@@ -75,7 +65,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
         HttpMethod.POST,
         {
           facility_id: facilityId,
-          inward_date: formatDateForAPI(inwardDate),
+          inward_date: formatDateForEaushadhiAPI(inwardDate),
           triggered_by: "USER",
           force_refresh: forceRefresh,
         } satisfies InitiateInwardFetchPayload,
