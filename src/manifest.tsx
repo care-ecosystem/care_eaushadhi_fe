@@ -1,8 +1,8 @@
 import { lazy, Suspense } from "react";
-import EAusdhadhiFetchPage from "./pages/EAusdhadhiFetchPage.tsx";
-import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
-import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
-import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
+import EAusdhadhiDeliveryCreate from "./pages/EAusdhadhiDeliveryCreate.tsx";
+import EAusdhadhiDeliveryShow from "./pages/EAusdhadhiDeliveryShow.tsx";
+import EAusdhadhiDeliveryEdit from "./pages/EAusdhadhiDeliveryEdit.tsx";
+import EAusdhadhiInwardFetch from "./pages/EAusdhadhiInwardFetch.tsx";
 import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
 import { InstituteMappingProvider } from "./contexts/InstituteMappingContext.tsx";
 import React from "react";
@@ -57,7 +57,7 @@ const manifest = {
         <InstituteMappingAdmin />
       </PageWrapper>
     ),
-    "/facility/:facilityId/locations/:locationId/eaushadhi/fetch": ({
+    "/facility/:facilityId/locations/:locationId/eaushadhi/delivery/create": ({
       facilityId,
       locationId,
     }: {
@@ -65,11 +65,11 @@ const manifest = {
       locationId: string;
     }) => (
       <FacilityPageWrapper facilityId={facilityId}>
-        <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} />
+        <EAusdhadhiDeliveryCreate facilityId={facilityId} locationId={locationId} />
       </FacilityPageWrapper>
     ),
 
-    "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit":
+    "/facility/:facilityId/locations/:locationId/eaushadhi/delivery/:deliveryOrderId/edit":
       ({
         facilityId,
         locationId,
@@ -80,7 +80,7 @@ const manifest = {
         deliveryOrderId: string;
       }) => (
         <FacilityPageWrapper facilityId={facilityId}>
-          <DeliveryOrderForm
+          <EAusdhadhiDeliveryEdit
             facilityId={facilityId}
             locationId={locationId}
             deliveryOrderId={deliveryOrderId}
@@ -88,7 +88,7 @@ const manifest = {
         </FacilityPageWrapper>
       ),
 
-    "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId": ({
+    "/facility/:facilityId/locations/:locationId/eaushadhi/delivery/:deliveryOrderId": ({
       facilityId,
       locationId,
       deliveryOrderId,
@@ -98,7 +98,7 @@ const manifest = {
       deliveryOrderId: string;
     }) => (
       <FacilityPageWrapper facilityId={facilityId}>
-        <DeliveryOrderShow
+        <EAusdhadhiDeliveryShow
           facilityId={facilityId}
           locationId={locationId}
           deliveryOrderId={deliveryOrderId}
@@ -106,7 +106,7 @@ const manifest = {
         />
       </FacilityPageWrapper>
     ),
-    "/facility/:facilityId/locations/:locationId/eaushadhi/fetch-new/:deliveryOrderId": ({
+    "/facility/:facilityId/locations/:locationId/eaushadhi/delivery/:deliveryOrderId/fetch-inward": ({
       facilityId,
       locationId,
       deliveryOrderId,
@@ -116,7 +116,7 @@ const manifest = {
       deliveryOrderId: string;
     }) => (
       <FacilityPageWrapper facilityId={facilityId}>
-        <DeliveryOrderFetch
+        <EAusdhadhiInwardFetch
           facilityId={facilityId}
           locationId={locationId}
           deliveryOrderId={deliveryOrderId}

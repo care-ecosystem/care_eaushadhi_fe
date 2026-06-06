@@ -36,14 +36,14 @@ interface DeliveryOrder {
     extensions?: Record<string, unknown>;
 }
 
-export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrderId }: Props) {
+export default function EAusdhadhiDeliveryEdit({ facilityId, locationId, deliveryOrderId }: Props) {
     const queryClient = useQueryClient();
     const { supplierMappings } = useInstituteMapping();
     const [name, setName] = useState("");
     const [supplier, setSupplier] = useState("");
     const [note, setNote] = useState("");
     const { t } = useTranslation(I18NNAMESPACE);
-    const returnPath = `/facility/${facilityId}/locations/${locationId}/eaushadhi/${deliveryOrderId}`;
+    const returnPath = `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${deliveryOrderId}`;
 
     const { data: existingOrder, isFetching } = useQuery({
         queryKey: ["deliveryOrder", deliveryOrderId],

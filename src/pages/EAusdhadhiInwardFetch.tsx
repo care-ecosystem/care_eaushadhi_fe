@@ -105,7 +105,7 @@ function resolveInwardState(
   return "retry";
 }
 
-export default function DeliveryOrderFetch({
+export default function EAusdhadhiInwardFetch({
   facilityId,
   locationId,
   deliveryOrderId,
@@ -142,7 +142,7 @@ export default function DeliveryOrderFetch({
     };
   }, []);
 
-  const addManuallyBasePath = `/facility/${facilityId}/locations/${locationId}/eaushadhi/${deliveryOrderId}`;
+  const addManuallyBasePath = `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${deliveryOrderId}`;
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
   const nativeAddManuallyPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/outgoing/${deliveryOrderId}`;
 
