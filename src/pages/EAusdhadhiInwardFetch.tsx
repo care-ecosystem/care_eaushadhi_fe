@@ -412,8 +412,7 @@ export default function EAusdhadhiInwardFetch({
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}
             >
-              {deliveryOrder.status.charAt(0).toUpperCase() +
-                deliveryOrder.status.slice(1)}
+            {t(`status_${deliveryOrder.status}`)}
             </span>
           </div>
           {deliveryOrder.note && (

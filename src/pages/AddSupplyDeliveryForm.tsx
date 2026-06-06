@@ -674,7 +674,7 @@ export default function AddSupplyDeliveryForm({
       <div className="flex flex-col items-center gap-3 py-8 text-center">
         <div className="animate-spin rounded-full h-8 w-8 border border-gray-200 border-t-gray-900" />
         <p className="text-sm font-medium text-gray-700">
-          Loading inward record...
+        {t("supply_form_loading_inward_record")}
         </p>
       </div>
     );
@@ -685,7 +685,7 @@ export default function AddSupplyDeliveryForm({
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
         <AlertCircle className="size-5 text-red-600 shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-medium text-red-900">Prefill Error</p>
+          <p className="text-sm font-medium text-red-900">{t("supply_form_prefill_error_title")}</p>
           <p className="text-sm text-red-700 mt-1">{prefillError}</p>
         </div>
       </div>
