@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
+import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 interface Props {
   facilityId: string;
@@ -111,6 +112,7 @@ export default function DeliveryOrderFetch({
 }: Props) {
   const queryClient = useQueryClient();
   const { t } = useTranslation(I18NNAMESPACE);
+  const { meta } = useInstituteMapping();
   // useRef so refetchInterval closure always reads the current value
   const isRetryingRef = useRef(false);
   // useState drives re-renders for UI (spinner vs action buttons)
@@ -343,14 +345,16 @@ export default function DeliveryOrderFetch({
             )}
             {t("delivery_fetch_from_eaushadhi")}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => handleAddManually(record?.id)}
-            className="flex items-center gap-2"
-          >
-            <PencilLine className="size-4" />
-            {t("delivery_fetch_add_manually")}
-          </Button>
+          {meta?.manual_addition && (
+            <Button
+              variant="outline"
+              onClick={() => handleAddManually(record?.id)}
+              className="flex items-center gap-2"
+            >
+              <PencilLine className="size-4" />
+              {t("delivery_fetch_add_manually")}
+            </Button>
+          )}
         </div>
       </div>
     );

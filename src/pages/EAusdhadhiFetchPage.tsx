@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { navigate } from "raviger";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
+import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 interface Props {
   facilityId: string;
@@ -24,16 +25,11 @@ interface Props {
   deliveryOrderId?: string;
 }
 
-interface SupplierMapping {
-  id: string;
-  supplier_id: string;
-  eaushadhi_warehouse_name: string;
-}
-
-interface InstituteMappingsResponse {
-  meta: Record<string, unknown>;
-  credentials_ref: string;
-  supplier_mappings: SupplierMapping[];
+interface InitiateInwardFetchPayload {
+  facility_id: string;
+  inward_date: string;
+  triggered_by: "USER";
+  force_refresh: boolean;
 }
 
 // Returns today's date formatted as YYYY-MM-DD (ISO format for date input)
@@ -51,30 +47,40 @@ function formatDateForURL(isoDate: string): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
+// Converts date from YYYY-MM-DD to DD/MM/YYYY format for API
+function formatDateForAPI(isoDate: string): string {
+  const [yyyy, mm, dd] = isoDate.split("-");
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
   const { t } = useTranslation(I18NNAMESPACE);
+  const { supplierMappings, defaultSupplier, meta } = useInstituteMapping();
   const [name, setName] = useState(t("fetch_page_default_name"));
-  const [supplier, setSupplier] = useState("");
+  const [supplier, setSupplier] = useState(defaultSupplier?.supplier_id || "");
   const [note, setNote] = useState("");
   const [inwardDate, setInwardDate] = useState(getTodayFormatted());
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
-  const { data: instituteMappings } = useQuery({
-    queryKey: ["instituteMappings", facilityId],
-    queryFn: () =>
-      request<{ results: InstituteMappingsResponse[] }>(
-        "/api/care_eaushadhi/institute-mappings/",
-        HttpMethod.GET,
-        { facility_id: facilityId },
-      ),
-    enabled: !!facilityId,
-  });
+  const supplierOptions = supplierMappings.map((mapping) => ({
+    id: mapping.supplier_id,
+    name: mapping.eaushadhi_warehouse_name,
+  }));
 
-  const supplierOptions =
-    instituteMappings?.results?.[0]?.supplier_mappings?.map((mapping) => ({
-      id: mapping.supplier_id,
-      name: mapping.eaushadhi_warehouse_name,
-    })) ?? [];
+  // Initiate inward fetch API
+  const { mutateAsync: initiateInwardFetch } = useMutation({
+    mutationFn: (forceRefresh: boolean) =>
+      request<unknown>(
+        "/api/care_eaushadhi/initiate-inward-fetch/",
+        HttpMethod.POST,
+        {
+          facility_id: facilityId,
+          inward_date: formatDateForAPI(inwardDate),
+          triggered_by: "USER",
+          force_refresh: forceRefresh,
+        } satisfies InitiateInwardFetchPayload,
+      ),
+  });
 
   const { mutate: createDeliveryOrder, isPending } = useMutation({
     mutationFn: () =>
@@ -91,8 +97,17 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
           extensions: {},
         },
       ),
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
       toast.success(t("fetch_page_success"));
+
+      // Initiate inward fetch before redirecting
+      try {
+        await initiateInwardFetch(false);
+      } catch (error) {
+        console.error("Failed to initiate inward fetch:", error);
+        // Continue with navigation even if fetch fails
+      }
+
       const formattedDate = formatDateForURL(inwardDate);
       navigate(
         `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${formattedDate}`,
@@ -166,6 +181,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
               className="h-9 bg-white"
               value={inwardDate}
               onChange={(e) => setInwardDate(e.target.value)}
+              disabled={meta?.disable_inward_date}
             />
             <p className="text-xs text-gray-500">
               {t("fetch_page_inward_date_hint")}

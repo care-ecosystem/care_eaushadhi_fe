@@ -68,6 +68,15 @@ interface DeliveryOrder {
   created_by: User;
 }
 
+interface InwardRecord {
+  id: string;
+  facility_id: string;
+  inward_date: string;
+  sync_status: string;
+  items_initial_count: number;
+  items_current_count: number;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
   pending: "bg-yellow-100 text-yellow-700",
@@ -156,6 +165,17 @@ export default function DeliveryOrderShow({
       }
       return data;
     },
+  });
+
+  // Fetch inward record if inwardRecordId is available
+  const { data: inwardRecord } = useQuery({
+    queryKey: ["inwardRecord", inwardRecordId],
+    queryFn: () =>
+      request<InwardRecord>(
+        `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
+        HttpMethod.GET,
+      ),
+    enabled: !!inwardRecordId,
   });
 
   const supplierId = deliveryOrder?.supplier?.id;
@@ -688,6 +708,7 @@ export default function DeliveryOrderShow({
                   supplierId={supplierId}
                   destination={deliveryOrder.destination.id}
                   inwardRecordId={inwardRecordId}
+                  inwardDate={inwardRecord?.inward_date}
                   supplyDeliveriesCount={supplyDeliveries?.length}
                   onSuccess={() => {
                     queryClient.invalidateQueries({
