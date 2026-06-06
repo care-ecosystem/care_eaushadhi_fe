@@ -29,6 +29,7 @@ import {
   SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
 import { I18NNAMESPACE } from "@/lib/contants";
+import { formatDateForEaushadhiAPI } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
@@ -131,25 +132,6 @@ const EMPTY_ROW = (): RowItem => ({
   eaushadhi_drug_id: "",
   product_mapping_id: "",
 });
-
-// Converts date to DD/MM/YYYY format for API
-function formatDateForAPI(date: string): string {
-  if (!date) return "";
-
-  // If already in DD/MM/YYYY format, return as is
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
-    return date;
-  }
-
-  // If in YYYY-MM-DD format, convert to DD/MM/YYYY
-  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [yyyy, mm, dd] = date.split("-");
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  // Return as is if format is unknown
-  return date;
-}
 
 // ─── Product Mapping Selector with Lazy Search ──────────────────────────────
 function ProductMappingSelector({
@@ -419,6 +401,7 @@ export default function AddSupplyDeliveryForm({
   inwardDate?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
+  const queryClient = useQueryClient();
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
@@ -540,7 +523,7 @@ export default function AddSupplyDeliveryForm({
         HttpMethod.POST,
         {
           facility_id: facilityId,
-          inward_date: inwardDate,
+          inward_date: formatDateForEaushadhiAPI(inwardDate),
           triggered_by: "USER",
           force_refresh: forceRefresh,
         } satisfies InitiateInwardFetchPayload,
@@ -725,8 +708,10 @@ export default function AddSupplyDeliveryForm({
             try {
               await initiateInwardFetch(true);
               toast.success(t("supply_form_refresh_success"));
-              // Optionally reload the page or refetch data
-              window.location.reload();
+              // Invalidate the inward record query to trigger a refetch
+              await queryClient.invalidateQueries({
+                queryKey: ["inwardRecord", inwardRecordId],
+              });
             } catch (error) {
               console.error("Failed to refresh inward data:", error);
               toast.error(t("supply_form_refresh_error"));
@@ -791,7 +776,7 @@ export default function AddSupplyDeliveryForm({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-end">
         <div className="flex gap-2">
           <Button
             variant="outline"
