@@ -85,7 +85,7 @@ const STATUS_COLORS: Record<string, string> = {
   entered_in_error: "bg-red-100 text-red-700",
 };
 
-export default function DeliveryOrderShow({
+export default function EAusdhadhiDeliveryShow({
   facilityId,
   locationId,
   deliveryOrderId,
@@ -362,7 +362,7 @@ export default function DeliveryOrderShow({
               variant="outline"
               onClick={() =>
                 navigate(
-                  `/facility/${facilityId}/locations/${locationId}/eaushadhi/${deliveryOrderId}/edit`,
+                  `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${deliveryOrderId}/edit`,
                 )
               }
             >

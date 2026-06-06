@@ -43,7 +43,7 @@ function getTodayFormatted() {
 }
 
 
-export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
+export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Props) {
   const { t } = useTranslation(I18NNAMESPACE);
   const { supplierMappings, defaultSupplier, meta } = useInstituteMapping();
   const [name, setName] = useState(t("fetch_page_default_name"));
@@ -100,7 +100,7 @@ export default function EAusdhadhiFetchPage({ facilityId, locationId }: Props) {
 
       const formattedDate = formatDateForURL(inwardDate);
       navigate(
-        `/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch-new/${data.id}?inward_date=${formattedDate}`,
+        `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${data.id}/fetch-inward?inward_date=${formattedDate}`,
       );
     },
     onError: () => {

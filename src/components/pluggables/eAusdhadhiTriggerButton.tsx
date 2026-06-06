@@ -14,7 +14,7 @@ export default function EAusdhadhiTriggerButton({ facilityId, locationId }: Prop
         <Button
         variant="outline_primary"
             onClick={() =>
-                navigate(`/facility/${facilityId}/locations/${locationId}/eaushadhi/fetch`)
+                navigate(`/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/create`)
             }
             className="flex items-center gap-2"
         >
