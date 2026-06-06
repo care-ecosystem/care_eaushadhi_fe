@@ -4,6 +4,7 @@ import DeliveryOrderShow from "./pages/DeliveryOrderShow.tsx";
 import DeliveryOrderForm from "./pages/DeliveryOrderForm.tsx";
 import DeliveryOrderFetch from "./pages/DeliveryOrderFetch.tsx";
 import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
+import { InstituteMappingProvider } from "./contexts/InstituteMappingContext.tsx";
 import React from "react";
 import { TruckIcon } from "lucide-react";
 import en from "../public/locale/en.json";
@@ -18,6 +19,23 @@ function PageWrapper({ children }: { children: React.ReactNode }) {
     >
       {children}
     </Suspense>
+  );
+}
+
+// Wrapper component for pages that need institute mapping data
+function FacilityPageWrapper({
+  facilityId,
+  children
+}: {
+  facilityId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <PageWrapper>
+      <InstituteMappingProvider facilityId={facilityId}>
+        {children}
+      </InstituteMappingProvider>
+    </PageWrapper>
   );
 }
 
@@ -45,8 +63,10 @@ const manifest = {
     }: {
       facilityId: string;
       locationId: string;
-    }) => (<PageWrapper>
-      <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} /></PageWrapper>
+    }) => (
+      <FacilityPageWrapper facilityId={facilityId}>
+        <EAusdhadhiFetchPage facilityId={facilityId} locationId={locationId} />
+      </FacilityPageWrapper>
     ),
 
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId/edit":
@@ -59,13 +79,13 @@ const manifest = {
         locationId: string;
         deliveryOrderId: string;
       }) => (
-        <PageWrapper>
+        <FacilityPageWrapper facilityId={facilityId}>
           <DeliveryOrderForm
             facilityId={facilityId}
             locationId={locationId}
             deliveryOrderId={deliveryOrderId}
           />
-        </PageWrapper>
+        </FacilityPageWrapper>
       ),
 
     "/facility/:facilityId/locations/:locationId/eaushadhi/:deliveryOrderId": ({
@@ -77,14 +97,14 @@ const manifest = {
       locationId: string;
       deliveryOrderId: string;
     }) => (
-      <PageWrapper>
+      <FacilityPageWrapper facilityId={facilityId}>
         <DeliveryOrderShow
           facilityId={facilityId}
           locationId={locationId}
           deliveryOrderId={deliveryOrderId}
           internal={false}
         />
-      </PageWrapper>
+      </FacilityPageWrapper>
     ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/fetch-new/:deliveryOrderId": ({
       facilityId,
@@ -95,13 +115,13 @@ const manifest = {
       locationId: string;
       deliveryOrderId: string;
     }) => (
-      <PageWrapper>
+      <FacilityPageWrapper facilityId={facilityId}>
         <DeliveryOrderFetch
           facilityId={facilityId}
           locationId={locationId}
           deliveryOrderId={deliveryOrderId}
         />
-      </PageWrapper>
+      </FacilityPageWrapper>
     ),
   },
   navItems: [],

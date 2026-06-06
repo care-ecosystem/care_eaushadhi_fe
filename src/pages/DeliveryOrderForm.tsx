@@ -17,23 +17,12 @@ import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
+import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 interface Props {
     facilityId: string;
     locationId: string;
     deliveryOrderId: string;
-}
-
-interface SupplierMapping {
-    id: string;
-    supplier_id: string;
-    eaushadhi_warehouse_name: string;
-}
-
-interface InstituteMappingsResponse {
-    meta: Record<string, unknown>;
-    credentials_ref: string;
-    supplier_mappings: SupplierMapping[];
 }
 
 interface DeliveryOrder {
@@ -49,6 +38,7 @@ interface DeliveryOrder {
 
 export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrderId }: Props) {
     const queryClient = useQueryClient();
+    const { supplierMappings } = useInstituteMapping();
     const [name, setName] = useState("");
     const [supplier, setSupplier] = useState("");
     const [note, setNote] = useState("");
@@ -72,22 +62,10 @@ export default function DeliveryOrderForm({ facilityId, locationId, deliveryOrde
         }
     }, [existingOrder]);
 
-    const { data: instituteMappings } = useQuery({
-        queryKey: ["instituteMappings", facilityId],
-        queryFn: () =>
-            request<{ results: InstituteMappingsResponse[] }>(
-                "/api/care_eaushadhi/institute-mappings/",
-                HttpMethod.GET,
-                { facility_id: facilityId },
-            ),
-        enabled: !!facilityId,
-    });
-
-    const supplierOptions =
-        instituteMappings?.results?.[0]?.supplier_mappings?.map((mapping) => ({
-            id: mapping.supplier_id,
-            name: mapping.eaushadhi_warehouse_name,
-        })) ?? [];
+    const supplierOptions = supplierMappings.map((mapping) => ({
+        id: mapping.supplier_id,
+        name: mapping.eaushadhi_warehouse_name,
+    }));
 
     const { mutate: updateDeliveryOrder, isPending } = useMutation({
         mutationFn: () =>

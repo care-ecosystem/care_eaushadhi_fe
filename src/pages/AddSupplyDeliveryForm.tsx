@@ -78,6 +78,12 @@ interface InwardItem {
 }
 
 interface InwardRecord {
+  id: string;
+  facility_id: string;
+  inward_date: string;
+  sync_status: string;
+  items_initial_count: number;
+  items_current_count: number;
   items: InwardItem[];
 }
 
@@ -96,6 +102,13 @@ interface InstituteMappingResponse {
     eaushadhi_institute_id: string;
     supplier_mappings: SupplierMapping[];
   }>;
+}
+
+interface InitiateInwardFetchPayload {
+  facility_id: string;
+  inward_date: string;
+  triggered_by: "USER";
+  force_refresh: boolean;
 }
 
 const EMPTY_ROW = (): RowItem => ({
@@ -118,6 +131,25 @@ const EMPTY_ROW = (): RowItem => ({
   eaushadhi_drug_id: "",
   product_mapping_id: "",
 });
+
+// Converts date to DD/MM/YYYY format for API
+function formatDateForAPI(date: string): string {
+  if (!date) return "";
+
+  // If already in DD/MM/YYYY format, return as is
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+    return date;
+  }
+
+  // If in YYYY-MM-DD format, convert to DD/MM/YYYY
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [yyyy, mm, dd] = date.split("-");
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  // Return as is if format is unknown
+  return date;
+}
 
 // ─── Product Mapping Selector with Lazy Search ──────────────────────────────
 function ProductMappingSelector({
@@ -375,6 +407,7 @@ export default function AddSupplyDeliveryForm({
   onSuccess,
   supplyDeliveriesCount,
   inwardRecordId: propInwardRecordId,
+  inwardDate: propInwardDate,
 }: {
   facilityId: string;
   deliveryOrderId: string;
@@ -383,6 +416,7 @@ export default function AddSupplyDeliveryForm({
   onSuccess: () => void;
   supplyDeliveriesCount: number;
   inwardRecordId?: string;
+  inwardDate?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const [rows, setRows] = useState<RowItem[]>([]);
@@ -445,6 +479,9 @@ export default function AddSupplyDeliveryForm({
     enabled: !!inwardRecordId,
   });
 
+  // Derive inwardDate from prop or inward record
+  const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
+
   // Step 3: Filter and prefill rows based on warehouse name
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
@@ -491,6 +528,25 @@ export default function AddSupplyDeliveryForm({
   }, [inwardRecord, supplierWarehouseName]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
+
+  // Initiate inward fetch API
+  const { mutateAsync: initiateInwardFetch, isPending: isFetching } = useMutation({
+    mutationFn: (forceRefresh: boolean) => {
+      if (!inwardDate) {
+        return Promise.reject(new Error("Inward date is required"));
+      }
+      return request<unknown>(
+        "/api/care_eaushadhi/initiate-inward-fetch/",
+        HttpMethod.POST,
+        {
+          facility_id: facilityId,
+          inward_date: inwardDate,
+          triggered_by: "USER",
+          force_refresh: forceRefresh,
+        } satisfies InitiateInwardFetchPayload,
+      );
+    },
+  });
 
   // Mutation for recording deliveries in eAushadhi system
   const { mutateAsync: recordDeliveries } = useMutation({
@@ -665,11 +721,26 @@ export default function AddSupplyDeliveryForm({
         </p>
         <Button
           variant="outline"
-          onClick={()=>{}}
+          onClick={async () => {
+            try {
+              await initiateInwardFetch(true);
+              toast.success(t("supply_form_refresh_success"));
+              // Optionally reload the page or refetch data
+              window.location.reload();
+            } catch (error) {
+              console.error("Failed to refresh inward data:", error);
+              toast.error(t("supply_form_refresh_error"));
+            }
+          }}
+          disabled={isFetching || !inwardDate}
           className="flex items-center gap-2"
         >
-          <RefreshCw className="size-4" />
-          {allConsumed ? t("supply_form_check_new_items") : t("supply_form_retry_sync")}
+          <RefreshCw className={`size-4 ${isFetching ? "animate-spin" : ""}`} />
+          {isFetching
+            ? t("supply_form_refreshing")
+            : allConsumed
+              ? t("supply_form_check_new_items")
+              : t("supply_form_retry_sync")}
         </Button>
       </div>
     );
@@ -682,28 +753,28 @@ export default function AddSupplyDeliveryForm({
           <thead className="bg-gray-100">
             <tr className="divide-x divide-gray-200">
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[280px] max-w-[400px]">
-                Product
+                {t("supply_form_col_product")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                Batch
+                {t("supply_form_col_batch")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                Expiry
+                {t("supply_form_col_expiry")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                Pack Size
+                {t("supply_form_col_pack_size")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                Pack Qty
+                {t("supply_form_col_pack_qty")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                Accepted Pack Qty
+                {t("supply_form_col_accepted_pack_qty")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                Qty In Units
+                {t("supply_form_col_qty_in_units")}
               </th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
-                Actions
+                {t("supply_form_col_actions")}
               </th>
             </tr>
           </thead>
