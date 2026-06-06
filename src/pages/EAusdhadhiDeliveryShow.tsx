@@ -1,15 +1,12 @@
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import {
   ChevronLeft,
-  EllipsisVertical,
-  MoreVertical,
   Printer,
 } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import AddSupplyDeliveryForm from "@/pages/AddSupplyDeliveryForm";
@@ -91,7 +88,6 @@ export default function EAusdhadhiDeliveryShow({
   deliveryOrderId,
 }: Props) {
   const queryClient = useQueryClient();
-  const [selectedDeliveries, setSelectedDeliveries] = useState<string[]>([]);
   const { t } = useTranslation(I18NNAMESPACE);
   // ──────────────────────────────────────────────────────────────────────────
   // MODIFICATION: Extract inward_record_id from URL query parameters
@@ -104,26 +100,6 @@ export default function EAusdhadhiDeliveryShow({
     return undefined;
   }, []);
 
-  // Confirm dialog state — matches core exactly
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean;
-    status: "completed" | "abandoned";
-    condition: "normal" | "damaged";
-  }>({
-    open: false,
-    status: "completed",
-    condition: "normal",
-  });
-
-  // Order status dialog (abandoned / entered_in_error)
-  const [orderStatusDialog, setOrderStatusDialog] = useState<{
-    open: boolean;
-    status: "abandoned" | "entered_in_error" | null;
-  }>({ open: false, status: null });
-
-  // Dropdown open states
-  const [itemsDropdownOpen, setItemsDropdownOpen] = useState(false);
-  const [orderDropdownOpen, setOrderDropdownOpen] = useState(false);
 
   const goBackToDeliveryPage = useCallback(() => {
     navigate(
@@ -154,17 +130,6 @@ export default function EAusdhadhiDeliveryShow({
         },
       ),
     enabled: !!deliveryOrderId,
-    // Auto-select in_progress items when pending
-    select: (data) => {
-      if (deliveryOrder?.status === "pending") {
-        const inProgressIds = data.results
-          .filter((d) => d.status === "in_progress")
-          .map((d) => d.id);
-        // Only set once on first load
-        setTimeout(() => setSelectedDeliveries(inProgressIds), 0);
-      }
-      return data;
-    },
   });
 
   // Fetch inward record if inwardRecordId is available
@@ -201,7 +166,6 @@ export default function EAusdhadhiDeliveryShow({
         queryKey: ["deliveryOrder", deliveryOrderId],
       });
       toast.success(t("delivery_show_status_updated"));
-      setOrderStatusDialog({ open: false, status: null });
 
       // If status is pending, redirect to outgoing page
       if (response?.status === "pending") {
@@ -212,86 +176,6 @@ export default function EAusdhadhiDeliveryShow({
     onError: () => toast.error(t("delivery_show_status_error")),
   });
 
-  // Upsert supply deliveries
-  const { mutate: upsertDeliveries, isPending: isUpserting } = useMutation({
-    mutationFn: (datapoints: Record<string, unknown>[]) =>
-      request(`/api/v1/supply_delivery/upsert/`, HttpMethod.POST, {
-        datapoints,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["supplyDeliveries", deliveryOrderId],
-      });
-      toast.success(t("delivery_show_items_updated_success"));
-      setSelectedDeliveries([]);
-      setConfirmDialog((prev) => ({ ...prev, open: false }));
-    },
-    onError: () => toast.error(t("delivery_show_items_error")),
-  });
-
-  function handleConfirmUpdateStock() {
-    if (selectedDeliveries.length === 0) {
-      toast.error(t("delivery_show_select_item"));
-      return;
-    }
-    setConfirmDialog({ open: true, status: "completed", condition: "normal" });
-  }
-
-  function handleSubmitDialog() {
-    const datapoints = supplyDeliveries
-      .filter((d) => selectedDeliveries.includes(d.id))
-      .map((d) => ({
-        id: d.id,
-        status: confirmDialog.status,
-        supplied_item: d.supplied_item?.id,
-        supplied_item_quantity: d.supplied_item_quantity,
-        supplied_item_condition: confirmDialog.condition,
-        supplied_item_type: d.supplied_item_type,
-        supply_request: d.supply_request?.id,
-        extensions: d.extensions ?? {},
-      }));
-    upsertDeliveries(datapoints);
-  }
-
-  function handleMarkAsAbandoned() {
-    if (selectedDeliveries.length === 0) {
-      toast.error(t("delivery_show_select_item"));
-      return;
-    }
-    const datapoints = supplyDeliveries
-      .filter((d) => selectedDeliveries.includes(d.id))
-      .map((d) => ({
-        id: d.id,
-        status: "abandoned",
-        supplied_item_quantity: d.supplied_item_quantity,
-        supplied_item_condition: d.supplied_item_condition,
-        supplied_item_type: d.supplied_item_type,
-        supply_request: d.supply_request?.id,
-        extensions: d.extensions ?? {},
-      }));
-    upsertDeliveries(datapoints);
-    setItemsDropdownOpen(false);
-  }
-
-  function handleMarkAsDamaged() {
-    if (selectedDeliveries.length === 0) {
-      toast.error(t("delivery_show_select_item"));
-      return;
-    }
-    const datapoints = supplyDeliveries
-      .filter((d) => selectedDeliveries.includes(d.id))
-      .map((d) => ({
-        id: d.id,
-        status: "completed",
-        supplied_item_quantity: d.supplied_item_quantity,
-        supplied_item_condition: "damaged",
-        supplied_item_type: d.supplied_item_type,
-        supply_request: d.supply_request?.id,
-        extensions: d.extensions ?? {},
-      }));
-    upsertDeliveries(datapoints);
-    setItemsDropdownOpen(false);
-  }
 
   if (isLoading) {
     return (
@@ -383,57 +267,6 @@ export default function EAusdhadhiDeliveryShow({
             </Button>
           )}
 
-          {/* Mark as Completed — pending + isRequester */}
-          {deliveryOrder.status === "pending" && isRequester && (
-            <Button
-              onClick={() => updateStatus("completed")}
-              disabled={
-                isUpdating || isUpserting || selectedDeliveries.length !== 0
-              }
-            >
-              {isUpdating
-                ? t("delivery_show_updating")
-                : t("delivery_show_mark_completed")}
-            </Button>
-          )}
-
-          {/* Dropdown: Abandoned / Entered in Error — draft only */}
-          {deliveryOrder.status === "draft" && (
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setOrderDropdownOpen((o) => !o)}
-              >
-                <EllipsisVertical className="size-4" />
-              </Button>
-              {orderDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 z-20 w-52 bg-white border border-gray-200 rounded-md shadow-lg">
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-red-600"
-                    onClick={() => {
-                      setOrderStatusDialog({
-                        open: true,
-                        status: "entered_in_error",
-                      });
-                      setOrderDropdownOpen(false);
-                    }}
-                  >
-                    {t("delivery_show_mark_entered_in_error")}
-                  </button>
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-red-600"
-                    onClick={() => {
-                      setOrderStatusDialog({ open: true, status: "abandoned" });
-                      setOrderDropdownOpen(false);
-                    }}
-                  >
-                    {t("delivery_show_mark_abandoned")}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -524,48 +357,6 @@ export default function EAusdhadhiDeliveryShow({
               : t("delivery_show_supply_deliveries")}
           </h2>
 
-          {/* Items section action buttons — pending + isRequester */}
-          {deliveryOrder.status === "pending" && isRequester && (
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleConfirmUpdateStock}
-                disabled={
-                  isUpdating || isUpserting || selectedDeliveries.length === 0
-                }
-              >
-                {isUpserting
-                  ? t("delivery_show_updating")
-                  : t("delivery_show_receive_update_stock")}
-              </Button>
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setItemsDropdownOpen((o) => !o)}
-                >
-                  <MoreVertical className="size-4" />
-                </Button>
-                {itemsDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-gray-200 rounded-md shadow-lg">
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
-                      onClick={handleMarkAsAbandoned}
-                      disabled={isUpserting || selectedDeliveries.length === 0}
-                    >
-                      {t("delivery_show_mark_abandoned")}
-                    </button>
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
-                      onClick={handleMarkAsDamaged}
-                      disabled={isUpserting || selectedDeliveries.length === 0}
-                    >
-                      {t("delivery_show_mark_damaged")}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="p-4 space-y-4">
@@ -584,33 +375,6 @@ export default function EAusdhadhiDeliveryShow({
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        {deliveryOrder.status === "pending" && isRequester && (
-                          <th className="px-3 py-2 text-left w-8">
-                            <input
-                              type="checkbox"
-                              checked={
-                                supplyDeliveries.filter(
-                                  (d) => d.status === "in_progress",
-                                ).length > 0 &&
-                                selectedDeliveries.length ===
-                                  supplyDeliveries.filter(
-                                    (d) => d.status === "in_progress",
-                                  ).length
-                              }
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedDeliveries(
-                                    supplyDeliveries
-                                      .filter((d) => d.status === "in_progress")
-                                      .map((d) => d.id),
-                                  );
-                                } else {
-                                  setSelectedDeliveries([]);
-                                }
-                              }}
-                            />
-                          </th>
-                        )}
                         <th className="px-3 py-2 text-left font-semibold text-gray-700">
                           {t("delivery_show_product")}
                         </th>
@@ -634,31 +398,6 @@ export default function EAusdhadhiDeliveryShow({
                     <tbody className="divide-y divide-gray-100">
                       {supplyDeliveries.map((d) => (
                         <tr key={d.id} className="hover:bg-gray-50">
-                          {deliveryOrder.status === "pending" &&
-                            isRequester && (
-                              <td className="px-3 py-2">
-                                {d.status === "in_progress" && (
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedDeliveries.includes(d.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedDeliveries([
-                                          ...selectedDeliveries,
-                                          d.id,
-                                        ]);
-                                      } else {
-                                        setSelectedDeliveries(
-                                          selectedDeliveries.filter(
-                                            (id) => id !== d.id,
-                                          ),
-                                        );
-                                      }
-                                    }}
-                                  />
-                                )}
-                              </td>
-                            )}
                           <td className="px-3 py-2 font-medium">
                             {d.supplied_item?.product_knowledge?.name ?? "—"}
                           </td>
@@ -722,148 +461,6 @@ export default function EAusdhadhiDeliveryShow({
         </div>
       </div>
 
-      {/* ── Confirm Receive Dialog ── */}
-      {confirmDialog.open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {t("delivery_show_confirm_title")}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {t("delivery_show_confirm_subtitle", {
-                  count: selectedDeliveries.length,
-                })}
-              </p>
-            </div>
-
-            {/* Receiving Status */}
-            <div className="space-y-3 bg-gray-50 p-4 rounded-md">
-              <Label className="text-sm font-medium">
-                {t("delivery_show_receiving_status")}
-              </Label>
-              <div className="flex gap-3 flex-wrap">
-                {(["completed", "abandoned"] as const).map((s) => (
-                  <label
-                    key={s}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
-                      confirmDialog.status === s
-                        ? "border-primary-600 bg-primary-50"
-                        : "border-gray-300 bg-white hover:border-gray-400"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      checked={confirmDialog.status === s}
-                      onChange={() =>
-                        setConfirmDialog((prev) => ({ ...prev, status: s }))
-                      }
-                    />
-                    <span className="font-medium capitalize">{s}</span>
-                  </label>
-                ))}
-              </div>
-
-              {/* Condition — only when completed */}
-              {confirmDialog.status === "completed" && (
-                <div className="space-y-3 mt-2">
-                  <Label className="text-sm font-medium">
-                    {t("delivery_show_item_condition")}
-                  </Label>
-                  <div className="flex gap-3 flex-wrap">
-                    {(["normal", "damaged"] as const).map((c) => (
-                      <label
-                        key={c}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-md border-[1.5px] cursor-pointer transition-all ${
-                          confirmDialog.condition === c
-                            ? "border-primary-600 bg-primary-50"
-                            : "border-gray-300 bg-white hover:border-gray-400"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          checked={confirmDialog.condition === c}
-                          onChange={() =>
-                            setConfirmDialog((prev) => ({
-                              ...prev,
-                              condition: c,
-                            }))
-                          }
-                        />
-                        <span className="font-medium capitalize">{c}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setConfirmDialog((prev) => ({ ...prev, open: false }))
-                }
-              >
-                {t("delivery_show_cancel")}
-              </Button>
-              <Button
-                onClick={handleSubmitDialog}
-                disabled={isUpserting}
-                className={
-                  confirmDialog.status === "abandoned"
-                    ? "bg-red-600 hover:bg-red-700 text-white"
-                    : ""
-                }
-              >
-                {isUpserting
-                  ? t("delivery_show_updating")
-                  : t("delivery_show_confirm")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Order Status Dialog (Abandoned / Entered in Error) ── */}
-      {orderStatusDialog.open && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {orderStatusDialog.status === "entered_in_error"
-                ? t("delivery_show_entered_in_error_title")
-                : t("delivery_show_abandoned_title")}
-            </h2>
-            <p className="text-sm text-gray-600">
-              {orderStatusDialog.status === "entered_in_error"
-                ? t("delivery_show_entered_in_error_desc")
-                : t("delivery_show_abandoned_desc")}
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setOrderStatusDialog({ open: false, status: null })
-                }
-              >
-                {t("delivery_show_cancel")}
-              </Button>
-              <Button
-                className="bg-red-600 hover:bg-red-700 text-white"
-                disabled={isUpdating}
-                onClick={() => {
-                  if (orderStatusDialog.status)
-                    updateStatus(orderStatusDialog.status);
-                }}
-              >
-                {isUpdating
-                  ? t("delivery_show_updating")
-                  : t("delivery_show_confirm")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
