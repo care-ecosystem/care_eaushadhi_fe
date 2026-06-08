@@ -777,7 +777,7 @@ export default function AddSupplyDeliveryForm({
           <tbody className="divide-y divide-gray-100">
             {rows.map((row, index) => (
               <DeliveryRow
-                key={index}
+                key={row.record_item_id}
                 facilityId={facilityId}
                 row={row}
                 onChange={(updated) => updateRow(index, updated)}
