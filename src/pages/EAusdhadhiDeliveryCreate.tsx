@@ -54,7 +54,7 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
 
   const supplierOptions = supplierMappings.map((mapping) => ({
     id: mapping.supplier_id,
-    name: mapping.eaushadhi_warehouse_name,
+    name: `${mapping.supplier_name} (${mapping.eaushadhi_warehouse_name})`,
   }));
 
   // Initiate inward fetch API
