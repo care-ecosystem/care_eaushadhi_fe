@@ -67,6 +67,11 @@ interface RowItem {
   product_mapping_id?: string;
 }
 
+interface ItemDelivery {
+  status: string;
+  quantity_received: string;
+}
+
 interface InwardItem {
   id: string;
   drug_name: string;
@@ -77,6 +82,7 @@ interface InwardItem {
   unit_pack: string;
   quantity_in_units?: string;
   warehouse_name: string;
+  item_deliveries: ItemDelivery[];
 }
 
 interface InwardRecord {
@@ -484,32 +490,48 @@ export default function AddSupplyDeliveryForm({
         (item) => item.warehouse_name === supplierWarehouseName,
       );
 
-      const newRows = filteredItems.map((item) => {
-        const expiryDate = item.expiry_date
-          ? item.expiry_date.split("T")[0]
-          : "";
-        const packSize = parseFloat(item.unit_pack) || 1;
-        const receivedQty = parseFloat(item.quantity_received_current) || 0;
+      const newRows = filteredItems
+        .map((item) => {
+          const expiryDate = item.expiry_date
+            ? item.expiry_date.split("T")[0]
+            : "";
+          const packSize = parseFloat(item.unit_pack) || 1;
+          const receivedQty = parseFloat(item.quantity_received_current) || 0;
 
-        return {
-          ...EMPTY_ROW(),
-          record_item_id: item.id,
-          product_knowledge_name: item.drug_name,
-          batch_number: item.batch_no,
-          expiry_date: expiryDate,
-          pack_size: packSize,
-          pack_qty: receivedQty,
-          quantity: String(receivedQty),
-          accepted_pack_qty: receivedQty,
-          accepted_qty_in_units: String(packSize * receivedQty),
-          quantity_in_units: item.quantity_in_units
-            ? String(Math.floor(parseFloat(item.quantity_in_units)))
-            : "",
-          eaushadhi_drug_name: item.drug_name,
-          eaushadhi_drug_id: item.drug_id,
-          is_new_batch: true,
-        } as RowItem;
-      });
+          const totalConsumedQty = item.item_deliveries.reduce(
+            (consumedQty, delivery) => {
+              if (delivery.status !== "ACTIVE") {
+                return consumedQty;
+              }
+              return (
+                consumedQty + parseInt(delivery.quantity_received) / packSize
+              );
+            },
+            0,
+          );
+
+          const availableQty = receivedQty - totalConsumedQty;
+
+          return {
+            ...EMPTY_ROW(),
+            record_item_id: item.id,
+            product_knowledge_name: item.drug_name,
+            batch_number: item.batch_no,
+            expiry_date: expiryDate,
+            pack_size: packSize,
+            pack_qty: availableQty,
+            quantity: String(availableQty),
+            accepted_pack_qty: availableQty,
+            accepted_qty_in_units: String(packSize * availableQty),
+            quantity_in_units: item.quantity_in_units
+              ? String(Math.floor(parseFloat(item.quantity_in_units)))
+              : "",
+            eaushadhi_drug_name: item.drug_name,
+            eaushadhi_drug_id: item.drug_id,
+            is_new_batch: true,
+          } as RowItem;
+        })
+        .filter((row) => row.pack_qty > 0);
 
       setRows(newRows);
       setPrefillError("");
@@ -522,23 +544,24 @@ export default function AddSupplyDeliveryForm({
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
   // Initiate inward fetch API
-  const { mutateAsync: initiateInwardFetch, isPending: isFetching } = useMutation({
-    mutationFn: (forceRefresh: boolean) => {
-      if (!inwardDate) {
-        return Promise.reject(new Error("Inward date is required"));
-      }
-      return request<unknown>(
-        "/api/care_eaushadhi/initiate-inward-fetch/",
-        HttpMethod.POST,
-        {
-          facility_id: facilityId,
-          inward_date: formatDateForEaushadhiAPI(inwardDate),
-          triggered_by: "USER",
-          force_refresh: forceRefresh,
-        } satisfies InitiateInwardFetchPayload,
-      );
-    },
-  });
+  const { mutateAsync: initiateInwardFetch, isPending: isFetching } =
+    useMutation({
+      mutationFn: (forceRefresh: boolean) => {
+        if (!inwardDate) {
+          return Promise.reject(new Error("Inward date is required"));
+        }
+        return request<unknown>(
+          "/api/care_eaushadhi/initiate-inward-fetch/",
+          HttpMethod.POST,
+          {
+            facility_id: facilityId,
+            inward_date: formatDateForEaushadhiAPI(inwardDate),
+            triggered_by: "USER",
+            force_refresh: forceRefresh,
+          } satisfies InitiateInwardFetchPayload,
+        );
+      },
+    });
 
   // Mutation for recording deliveries in eAushadhi system
   const { mutateAsync: recordDeliveries } = useMutation({
@@ -609,8 +632,8 @@ export default function AddSupplyDeliveryForm({
         batchNumber: row.batch_number,
         expiryDate: row.expiry_date,
         packSize: row.pack_size,
-        packQty: row.pack_qty,
-        quantity: row.quantity,
+        packQty: row.accepted_pack_qty,
+        quantity: row.accepted_qty_in_units,
         purchasePrice: "0",
         recordItemId: row.record_item_id,
         existingProductId: row.supplied_item_id || undefined,
@@ -674,7 +697,7 @@ export default function AddSupplyDeliveryForm({
       <div className="flex flex-col items-center gap-3 py-8 text-center">
         <div className="animate-spin rounded-full h-8 w-8 border border-gray-200 border-t-gray-900" />
         <p className="text-sm font-medium text-gray-700">
-        {t("supply_form_loading_inward_record")}
+          {t("supply_form_loading_inward_record")}
         </p>
       </div>
     );
@@ -685,7 +708,9 @@ export default function AddSupplyDeliveryForm({
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
         <AlertCircle className="size-5 text-red-600 shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-medium text-red-900">{t("supply_form_prefill_error_title")}</p>
+          <p className="text-sm font-medium text-red-900">
+            {t("supply_form_prefill_error_title")}
+          </p>
           <p className="text-sm text-red-700 mt-1">{prefillError}</p>
         </div>
       </div>
@@ -782,8 +807,12 @@ export default function AddSupplyDeliveryForm({
                 row={row}
                 onChange={(updated) => updateRow(index, updated)}
                 onRemove={() => removeRow(index)}
-                allowDeletingInward={meta?.allow_deleting_inward_after_fetch ?? true}
-                allowUpdatingQuantity={meta?.allow_updating_quantity_after_received ?? true}
+                allowDeletingInward={
+                  meta?.allow_deleting_inward_after_fetch ?? true
+                }
+                allowUpdatingQuantity={
+                  meta?.allow_updating_quantity_after_received ?? true
+                }
               />
             ))}
           </tbody>
