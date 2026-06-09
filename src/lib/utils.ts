@@ -9,10 +9,10 @@ export function cn(...inputs: ClassValue[]) {
 export function navigateToDeliveryPrint(
   facilityId: string,
   locationId: string,
-  deliveryId: string
+  deliveryId: string,
 ) {
   navigate(
-    `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming/${deliveryId}/print`
+    `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming/${deliveryId}/print`,
   );
 }
 

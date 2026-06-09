@@ -42,10 +42,18 @@ function getTodayFormatted() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-
-export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Props) {
+export default function EAusdhadhiDeliveryCreate({
+  facilityId,
+  locationId,
+}: Props) {
   const { t } = useTranslation(I18NNAMESPACE);
-  const { supplierMappings, defaultSupplier, meta, instituteMapping, isLoading } = useInstituteMapping();
+  const {
+    supplierMappings,
+    defaultSupplier,
+    meta,
+    instituteMapping,
+    isLoading,
+  } = useInstituteMapping();
   const [name, setName] = useState(t("fetch_page_default_name"));
   const [supplier, setSupplier] = useState(defaultSupplier?.supplier_id || "");
   const [note, setNote] = useState("");
@@ -163,9 +171,7 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
                     ? t("fetch_page_no_institute_mapping")
                     : t("fetch_page_no_supplier_mappings")}
                 </p>
-                <p className="mt-2">
-                  {t("fetch_page_contact_admin")}
-                </p>
+                <p className="mt-2">{t("fetch_page_contact_admin")}</p>
               </div>
               <div className="mt-4">
                 <Button
@@ -207,7 +213,9 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
         {/* Name + Supplier */}
         <div className="grid sm:grid-cols-2 gap-4 items-start">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-900">{t("fetch_page_name_label")}</label>
+            <label className="text-sm font-medium text-gray-900">
+              {t("fetch_page_name_label")}
+            </label>
             <Input
               className="h-9 bg-white"
               placeholder={t("fetch_page_name_placeholder")}
@@ -239,7 +247,8 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
         <div className="grid sm:grid-cols-2 gap-4 items-start">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-gray-900">
-              {t("fetch_page_inward_date_label")} <span className="text-red-500">*</span>
+              {t("fetch_page_inward_date_label")}{" "}
+              <span className="text-red-500">*</span>
             </label>
             <Input
               type="date"

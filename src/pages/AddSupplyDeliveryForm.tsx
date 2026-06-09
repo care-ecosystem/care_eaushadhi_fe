@@ -172,14 +172,12 @@ function ProductMappingSelector({
 
     setIsSearching(true);
     try {
-      const response = await request<{ results: ProductMapping[] }>(
-        `/api/care_eaushadhi/product-mappings/search/`,
-        HttpMethod.GET,
-        {
-          facility_id: facilityId,
-          eaushadhi_drug_id: eaushadhiDrugId,
-        },
-      );
+      const response = await request<{
+        results: ProductMapping[];
+      }>(`/api/care_eaushadhi/product-mappings/search/`, HttpMethod.GET, {
+        facility_id: facilityId,
+        eaushadhi_drug_id: eaushadhiDrugId,
+      });
       setSearchResults(response.results || []);
     } catch (err) {
       console.error("Error fetching product mappings:", err);
