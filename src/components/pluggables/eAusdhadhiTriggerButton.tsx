@@ -18,7 +18,7 @@ export default function EAusdhadhiTriggerButton({
       variant="outline_primary"
       onClick={() =>
         navigate(
-          `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/create`,
+          `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/create`
         )
       }
       className="flex items-center gap-2"
