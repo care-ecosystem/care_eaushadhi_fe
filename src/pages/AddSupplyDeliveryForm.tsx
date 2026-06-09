@@ -5,12 +5,14 @@ import {
   RefreshCw,
   CloudOff,
   CircleCheck,
+  PlusIcon,
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -18,6 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
@@ -147,16 +156,277 @@ const EMPTY_ROW = (): RowItem => ({
   product_mapping_id: "",
 });
 
+const DOSAGE_UNITS = [
+  { code: "{tbl}", display: "tablets", system: "http://unitsofmeasure.org" },
+  { code: "g", display: "gram", system: "http://unitsofmeasure.org" },
+  { code: "mg", display: "milligram", system: "http://unitsofmeasure.org" },
+  { code: "ug", display: "microgram", system: "http://unitsofmeasure.org" },
+  { code: "mL", display: "milliliter", system: "http://unitsofmeasure.org" },
+  { code: "[drp]", display: "drop", system: "http://unitsofmeasure.org" },
+  {
+    code: "[iU]",
+    display: "international unit",
+    system: "http://unitsofmeasure.org",
+  },
+  { code: "{count}", display: "count", system: "http://unitsofmeasure.org" },
+] as const;
+
+function toSlug(value: string, maxLength: number): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s_-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, maxLength);
+}
+
+// ─── Create Product Knowledge Dialog ──────────────────────────────────────────
+function CreateProductKnowledgeDialog({
+  facilityId,
+  eaushadhiDrugId,
+  eaushadhiDrugName,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  facilityId: string;
+  eaushadhiDrugId: string;
+  eaushadhiDrugName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (mapping: ProductMapping) => void;
+}) {
+  const { t } = useTranslation(I18NNAMESPACE);
+  const [name, setName] = useState("");
+  const [slugValue, setSlugValue] = useState("");
+  const [categorySlug, setCategorySlug] = useState("");
+  const [baseUnitCode, setBaseUnitCode] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Prefill or reset form when dialog opens/closes
+  useEffect(() => {
+    if (open) {
+      setName(eaushadhiDrugName);
+      setSlugValue(toSlug(eaushadhiDrugName, 25));
+      setCategorySlug("");
+      setBaseUnitCode("");
+      setErrors({});
+    }
+  }, [open, eaushadhiDrugName]);
+
+  const { data: categoriesData } = useQuery({
+    queryKey: ["resourceCategories", facilityId, "product_knowledge"],
+    queryFn: () =>
+      request<{
+        results: Array<{ id: string; title: string; slug: string }>;
+      }>(`/api/v1/facility/${facilityId}/resource_category/`, HttpMethod.GET, {
+        resource_type: "product_knowledge",
+      }),
+    enabled: open && !!facilityId,
+  });
+
+  const categories = categoriesData?.results ?? [];
+
+  function handleNameChange(value: string) {
+    setName(value);
+    setSlugValue(toSlug(value, 25));
+    if (errors.name) setErrors((e) => ({ ...e, name: "" }));
+  }
+
+  function validate() {
+    const next: Record<string, string> = {};
+    if (!name.trim()) next.name = t("create_pk_error_name_required");
+    const slug = slugValue.trim();
+    if (slug.length < 5 || slug.length > 25 || !/^[a-z0-9_-]+$/.test(slug))
+      next.slugValue = t("create_pk_error_slug_invalid");
+    if (!categorySlug)
+      next.categorySlug = t("create_pk_error_category_required");
+    if (!baseUnitCode)
+      next.baseUnitCode = t("create_pk_error_base_unit_required");
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function handleSubmit() {
+    if (!validate()) return;
+    setIsSubmitting(true);
+    try {
+      const baseUnit = DOSAGE_UNITS.find((u) => u.code === baseUnitCode)!;
+      const pk = await request<{ id: string; slug: string; name: string }>(
+        `/api/v1/product_knowledge/`,
+        HttpMethod.POST,
+        {
+          name: name.trim(),
+          slug_value: slugValue.trim(),
+          product_type: "medication",
+          status: "active",
+          category: categorySlug,
+          base_unit: baseUnit,
+          facility: facilityId,
+          names: [],
+          storage_guidelines: [],
+        },
+      );
+
+      toast.success(t("create_pk_success"));
+      onCreated({
+        id: "",
+        eaushadhi_drug_name: eaushadhiDrugName,
+        eaushadhi_drug_id: eaushadhiDrugId,
+        product_knowledge: pk,
+      });
+      onOpenChange(false);
+    } catch (err) {
+      console.error("Error creating product knowledge:", err);
+      toast.error(t("create_pk_error"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("create_pk_title")}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label htmlFor="pk-name">
+              {t("create_pk_field_name")}{" "}
+              <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="pk-name"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              className="h-9 text-sm"
+            />
+            {errors.name && (
+              <p className="text-xs text-red-500">{errors.name}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="pk-slug">
+              {t("create_pk_field_slug")}{" "}
+              <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="pk-slug"
+              value={slugValue}
+              onChange={(e) => {
+                const v = e.target.value
+                  .toLowerCase()
+                  .replace(/[^a-z0-9_-]/g, "");
+                setSlugValue(v);
+                if (errors.slugValue)
+                  setErrors((err) => ({ ...err, slugValue: "" }));
+              }}
+              className="h-9 text-sm"
+            />
+            <p className="text-xs text-gray-500">{t("create_pk_slug_hint")}</p>
+            {errors.slugValue && (
+              <p className="text-xs text-red-500">{errors.slugValue}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="pk-category">
+              {t("create_pk_field_category")}{" "}
+              <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={categorySlug}
+              onValueChange={(v) => {
+                setCategorySlug(v);
+                if (errors.categorySlug)
+                  setErrors((err) => ({ ...err, categorySlug: "" }));
+              }}
+            >
+              <SelectTrigger id="pk-category" className="h-9 text-sm w-full">
+                <SelectValue placeholder={t("create_pk_select_category")} />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.length === 0 && (
+                  <div className="py-3 text-center text-xs text-gray-500">
+                    {t("create_pk_no_categories")}
+                  </div>
+                )}
+                {categories.map((cat) => (
+                  <SelectItem key={cat.slug} value={cat.slug}>
+                    {cat.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.categorySlug && (
+              <p className="text-xs text-red-500">{errors.categorySlug}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="pk-base-unit">
+              {t("create_pk_field_base_unit")}{" "}
+              <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={baseUnitCode}
+              onValueChange={(v) => {
+                setBaseUnitCode(v);
+                if (errors.baseUnitCode)
+                  setErrors((err) => ({ ...err, baseUnitCode: "" }));
+              }}
+            >
+              <SelectTrigger id="pk-base-unit" className="h-9 text-sm w-full">
+                <SelectValue placeholder={t("create_pk_select_base_unit")} />
+              </SelectTrigger>
+              <SelectContent>
+                {DOSAGE_UNITS.map((unit) => (
+                  <SelectItem key={unit.code} value={unit.code}>
+                    {unit.display}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.baseUnitCode && (
+              <p className="text-xs text-red-500">{errors.baseUnitCode}</p>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            {t("supply_form_cancel")}
+          </Button>
+          <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? t("supply_form_saving") : t("create_pk_submit")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Product Mapping Selector with Lazy Search ──────────────────────────────
 function ProductMappingSelector({
   facilityId,
   eaushadhiDrugId,
+  eaushadhiDrugName,
   value,
   isLoading,
   onSelect,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
+  eaushadhiDrugName: string;
   value: string;
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
@@ -164,25 +434,31 @@ function ProductMappingSelector({
   const { t } = useTranslation(I18NNAMESPACE);
   const [isOpen, setIsOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
+  const canCreateRef = useRef(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   // Fetch product mappings when dropdown opens
-  const fetchMappings = useCallback(async () => {
-    if (!eaushadhiDrugId || isSearching) return;
+  const fetchMappings = useCallback(async (): Promise<ProductMapping[]> => {
+    if (!eaushadhiDrugId || isSearching) return [];
 
     setIsSearching(true);
     try {
       const response = await request<{
         results: ProductMapping[];
+        can_create: boolean;
       }>(`/api/care_eaushadhi/product-mappings/search/`, HttpMethod.GET, {
         facility_id: facilityId,
         eaushadhi_drug_id: eaushadhiDrugId,
       });
       setSearchResults(response.results || []);
+      canCreateRef.current = response.can_create ?? false;
+      return response.results || [];
     } catch (err) {
       console.error("Error fetching product mappings:", err);
       toast.error(t("supply_form_load_products_error"));
       setSearchResults([]);
+      return [];
     } finally {
       setIsSearching(false);
     }
@@ -199,52 +475,95 @@ function ProductMappingSelector({
   const selectedMapping = searchResults.find((m) => m.id === value);
 
   return (
-    <Select
-      value={value}
-      onValueChange={(mappingId) => {
-        const mapping = searchResults.find((m) => m.id === mappingId);
-        if (mapping) {
-          onSelect(mapping);
-          setIsOpen(false);
-        }
-      }}
-      open={isOpen}
-      onOpenChange={handleOpenChange}
-      disabled={isLoading || !eaushadhiDrugId}
-    >
-      <SelectTrigger size="sm" className="w-full">
-        <SelectValue
-          placeholder={
-            !eaushadhiDrugId
-              ? t("supply_form_no_drug_selected")
-              : isSearching
-                ? t("supply_form_loading")
-                : selectedMapping
-                  ? selectedMapping.product_knowledge.name
-                  : t("supply_form_select_product")
+    <>
+      <Select
+        value={value}
+        onValueChange={(mappingId) => {
+          const mapping = searchResults.find((m) => m.id === mappingId);
+          if (mapping) {
+            onSelect(mapping);
+            setIsOpen(false);
           }
-        />
-      </SelectTrigger>
-      <SelectContent>
-        {isSearching && (
-          <div className="flex items-center justify-center py-4 text-xs text-gray-500">
-            <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
-            {t("supply_form_searching")}
-          </div>
-        )}
-        {!isSearching && searchResults.length === 0 && (
-          <div className="py-4 text-center text-xs text-gray-500">
-            {t("supply_form_no_products_found")}
-          </div>
-        )}
-        {!isSearching &&
-          searchResults.map((mapping) => (
-            <SelectItem key={mapping.id} value={mapping.id}>
-              {mapping.product_knowledge.name}
-            </SelectItem>
-          ))}
-      </SelectContent>
-    </Select>
+        }}
+        open={isOpen}
+        onOpenChange={handleOpenChange}
+        disabled={isLoading || !eaushadhiDrugId}
+      >
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue
+            placeholder={
+              !eaushadhiDrugId
+                ? t("supply_form_no_drug_selected")
+                : isSearching
+                  ? t("supply_form_loading")
+                  : selectedMapping
+                    ? selectedMapping.product_knowledge.name
+                    : t("supply_form_select_product")
+            }
+          />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          className="w-[var(--radix-select-trigger-width)]"
+        >
+          {isSearching && (
+            <div className="flex items-center justify-center py-4 text-xs text-gray-500">
+              <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
+              {t("supply_form_searching")}
+            </div>
+          )}
+          {!isSearching && searchResults.length === 0 && (
+            <div className="flex flex-col items-center gap-2 py-4 px-2">
+              <p className="text-xs text-gray-500">
+                {t("supply_form_no_products_found")}
+              </p>
+              {canCreateRef.current && (
+                <Button
+                  variant="primary"
+                  size="default"
+                  type="button"
+                  className="mt-4"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    setCreateDialogOpen(true);
+                  }}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  {t("supply_form_create_product_knowledge")}
+                </Button>
+              )}
+            </div>
+          )}
+          {!isSearching &&
+            searchResults.map((mapping) => (
+              <SelectItem
+                key={mapping.id}
+                value={mapping.id}
+                className="whitespace-normal wrap-break-word"
+              >
+                {mapping.product_knowledge.name}
+              </SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+
+      <CreateProductKnowledgeDialog
+        facilityId={facilityId}
+        eaushadhiDrugId={eaushadhiDrugId}
+        eaushadhiDrugName={eaushadhiDrugName}
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={async (mapping) => {
+          setSearchResults([]);
+          const results = await fetchMappings();
+          const realMapping = results.find(
+            (m) => m.product_knowledge.id === mapping.product_knowledge.id,
+          );
+          if (realMapping) onSelect(realMapping);
+        }}
+      />
+    </>
   );
 }
 
@@ -309,6 +628,7 @@ function DeliveryRow({
           <ProductMappingSelector
             facilityId={facilityId}
             eaushadhiDrugId={row.eaushadhi_drug_id || ""}
+            eaushadhiDrugName={row.eaushadhi_drug_name || ""}
             value={row.product_mapping_id || ""}
             isLoading={false}
             onSelect={handleSelectMapping}
