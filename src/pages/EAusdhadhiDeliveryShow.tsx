@@ -1,8 +1,5 @@
 import { useMemo, useCallback } from "react";
-import {
-  ChevronLeft,
-  Printer,
-} from "lucide-react";
+import { ChevronLeft, Printer } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -100,7 +97,6 @@ export default function EAusdhadhiDeliveryShow({
     return undefined;
   }, []);
 
-
   const goBackToDeliveryPage = useCallback(() => {
     navigate(
       `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`,
@@ -176,7 +172,6 @@ export default function EAusdhadhiDeliveryShow({
     onError: () => toast.error(t("delivery_show_status_error")),
   });
 
-
   if (isLoading) {
     return (
       <div className="w-full px-6 py-6 max-w-5xl mx-auto">
@@ -246,7 +241,7 @@ export default function EAusdhadhiDeliveryShow({
               variant="outline"
               onClick={() =>
                 navigate(
-                  `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${deliveryOrderId}/edit`,
+                  `/facility/${facilityId}/locations/${locationId}/eaushadhi/delivery/${deliveryOrderId}/edit?inward_record_id=${inwardRecordId}`,
                 )
               }
             >
@@ -266,7 +261,6 @@ export default function EAusdhadhiDeliveryShow({
                 : t("delivery_show_mark_approved")}
             </Button>
           )}
-
         </div>
       </div>
 
@@ -355,7 +349,6 @@ export default function EAusdhadhiDeliveryShow({
                 : t("delivery_show_items_to_receive")
               : t("delivery_show_supply_deliveries")}
           </h2>
-
         </div>
 
         <div className="p-4 space-y-4">
@@ -428,7 +421,7 @@ export default function EAusdhadhiDeliveryShow({
                                     : "bg-yellow-100 text-yellow-700"
                               }`}
                             >
-                            {t(`status_${d.status}`)}
+                              {t(`status_${d.status}`)}
                             </span>
                           </td>
                         </tr>
@@ -459,7 +452,6 @@ export default function EAusdhadhiDeliveryShow({
           )}
         </div>
       </div>
-
     </div>
   );
 }
