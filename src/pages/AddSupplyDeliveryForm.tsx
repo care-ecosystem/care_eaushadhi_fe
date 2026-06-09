@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Trash2,
   AlertCircle,
@@ -85,6 +85,12 @@ interface InwardItem {
   item_deliveries: ItemDelivery[];
 }
 
+interface Delivery {
+  id: string;
+  inward_record_id: string;
+  delivery_order_id: string;
+}
+
 interface InwardRecord {
   id: string;
   facility_id: string;
@@ -93,6 +99,7 @@ interface InwardRecord {
   items_initial_count: number;
   items_current_count: number;
   items: InwardItem[];
+  deliveries: Delivery[];
 }
 
 interface SupplierMapping {
@@ -430,7 +437,7 @@ export default function AddSupplyDeliveryForm({
   }, []);
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
-  const recordDeliveryId = "b50e5dc8-4a28-47d1-bcc7-7640e506f841";
+  const recordDeliveryId = useRef<string | null>(null);
 
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
@@ -476,6 +483,20 @@ export default function AddSupplyDeliveryForm({
       ),
     enabled: !!inwardRecordId,
   });
+
+  const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
+    return inwardRecord?.deliveries.find(
+      (d) =>
+        d.inward_record_id === inwardRecordId &&
+        d.delivery_order_id === deliveryOrderId,
+    );
+  }, [inwardRecordId, deliveryOrderId, inwardRecord]);
+
+  useEffect(() => {
+    if (deliveryInwardRecordIdMapping) {
+      recordDeliveryId.current = deliveryInwardRecordIdMapping.id;
+    }
+  }, [deliveryInwardRecordIdMapping]);
 
   // Derive inwardDate from prop or inward record
   const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
@@ -608,18 +629,17 @@ export default function AddSupplyDeliveryForm({
 
     try {
       // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
-      let finalRecordDeliveryId = recordDeliveryId;
-
-      if (inwardRecordId) {
+      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined) {
         const response = await recordDeliveries({
           inward_record_id: inwardRecordId,
           facility_id: facilityId,
           delivery_order_id: deliveryOrderId,
         });
-        finalRecordDeliveryId = response.id;
+
+        recordDeliveryId.current = response.id;
       }
 
-      if (!finalRecordDeliveryId) {
+      if (recordDeliveryId.current === null) {
         toast.error(t("supply_form_missing_record_delivery_ref"));
         return;
       }
@@ -648,7 +668,7 @@ export default function AddSupplyDeliveryForm({
         facilityId,
         destination,
         deliveryOrderId,
-        recordDeliveryId: finalRecordDeliveryId,
+        recordDeliveryId: recordDeliveryId.current,
         eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
       };
 
