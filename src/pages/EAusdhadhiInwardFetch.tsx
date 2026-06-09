@@ -124,16 +124,16 @@ export default function EAusdhadhiInwardFetch({
 
     const parsed = raw
       ? (() => {
-        const [month, day, year] = raw.split("/");
-        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-      })()
+          const [month, day, year] = raw.split("/");
+          return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+        })()
       : null;
 
     const apiFormat = raw
       ? (() => {
-        const [month, day, year] = raw.split("/");
-        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
-      })()
+          const [month, day, year] = raw.split("/");
+          return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+        })()
       : null;
 
     return {
@@ -296,7 +296,9 @@ export default function EAusdhadhiInwardFetch({
       return (
         <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
           <Loader2Icon className="animate-spin text-gray-400 size-6" />
-          <p className="text-sm text-gray-400">{t("delivery_fetch_redirecting")}</p>
+          <p className="text-sm text-gray-400">
+            {t("delivery_fetch_redirecting")}
+          </p>
         </div>
       );
     }
@@ -307,24 +309,32 @@ export default function EAusdhadhiInwardFetch({
     const isFetchedEmpty =
       record?.sync_status === "FETCHED" && record.items_current_count === 0;
 
-    const heading = isFailed ? t("delivery_fetch_sync_failed") : t("delivery_fetch_no_records");
+    const heading = isFailed
+      ? t("delivery_fetch_sync_failed")
+      : t("delivery_fetch_no_records");
     const description = isFailed
       ? t("delivery_fetch_failed_desc")
       : isFetchedEmpty
         ? t("delivery_fetch_empty_desc")
         : t("delivery_fetch_no_records_desc");
-    const retryLabel = isInitiating ? t("delivery_fetch_retrying") : isFailed ? t("delivery_fetch_retry") : t("delivery_fetch_refetch");
+    const retryLabel = isInitiating
+      ? t("delivery_fetch_retrying")
+      : isFailed
+        ? t("delivery_fetch_retry")
+        : t("delivery_fetch_refetch");
 
     return (
       <div className="flex items-center justify-center px-4 py-10 flex-col gap-4">
         <div className="flex flex-col items-center gap-2 text-center">
           <span
-            className={`inline-flex items-center justify-center size-10 rounded-full ${isFailed ? "bg-red-100" : "bg-yellow-100"
-              }`}
+            className={`inline-flex items-center justify-center size-10 rounded-full ${
+              isFailed ? "bg-red-100" : "bg-yellow-100"
+            }`}
           >
             <span
-              className={`text-lg font-bold ${isFailed ? "text-red-600" : "text-yellow-600"
-                }`}
+              className={`text-lg font-bold ${
+                isFailed ? "text-red-600" : "text-yellow-600"
+              }`}
             >
               {isFailed ? "!" : "∅"}
             </span>
@@ -380,8 +390,8 @@ export default function EAusdhadhiInwardFetch({
                 {deliveryOrder.supplier?.name ??
                   deliveryOrder.origin?.name ??
                   "—"}
-              </span>
-              {" "}{t("delivery_fetch_to")}{" "}
+              </span>{" "}
+              {t("delivery_fetch_to")}{" "}
               <span className="font-medium">
                 {deliveryOrder.destination.name}
               </span>
@@ -394,35 +404,45 @@ export default function EAusdhadhiInwardFetch({
       <div className="border border-gray-200 rounded-lg bg-white p-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_deliver_to")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_fetch_deliver_to")}
+            </p>
             <p className="text-lg font-semibold text-gray-900">
               {deliveryOrder.destination.name}
             </p>
           </div>
           {deliveryOrder.supplier && (
             <div>
-              <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_supplier")}</p>
+              <p className="text-sm font-medium text-gray-500">
+                {t("delivery_fetch_supplier")}
+              </p>
               <p className="text-lg font-semibold text-gray-900">
                 {deliveryOrder.supplier.name}
               </p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_status")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_fetch_status")}
+            </p>
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[deliveryOrder.status]}`}
             >
-            {t(`status_${deliveryOrder.status}`)}
+              {t(`status_${deliveryOrder.status}`)}
             </span>
           </div>
           {deliveryOrder.note && (
             <div>
-              <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_note")}</p>
+              <p className="text-sm font-medium text-gray-500">
+                {t("delivery_fetch_note")}
+              </p>
               <p className="text-sm text-gray-700">{deliveryOrder.note}</p>
             </div>
           )}
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_created_by")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_fetch_created_by")}
+            </p>
             <p className="text-base font-semibold text-gray-900">
               {deliveryOrder.created_by.first_name}{" "}
               {deliveryOrder.created_by.last_name}
@@ -432,7 +452,9 @@ export default function EAusdhadhiInwardFetch({
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-gray-500">{t("delivery_fetch_tags")}</p>
+            <p className="text-sm font-medium text-gray-500">
+              {t("delivery_fetch_tags")}
+            </p>
             <div className="flex flex-wrap gap-1 mt-1">
               {deliveryOrder.tags?.length > 0 ? (
                 deliveryOrder.tags.map((tag) => (
@@ -444,7 +466,9 @@ export default function EAusdhadhiInwardFetch({
                   </span>
                 ))
               ) : (
-                <span className="text-sm text-gray-400">{t("delivery_fetch_add_tags")}</span>
+                <span className="text-sm text-gray-400">
+                  {t("delivery_fetch_add_tags")}
+                </span>
               )}
             </div>
           </div>
