@@ -52,85 +52,6 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
   const [inwardDate, setInwardDate] = useState(getTodayFormatted());
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
 
-  const supplierOptions = supplierMappings.map((mapping) => ({
-    id: mapping.supplier_id,
-    name: `${mapping.supplier_name} (${mapping.eaushadhi_warehouse_name})`,
-  }));
-
-  // Check if institute mapping and supplier mappings exist
-  if (isLoading) {
-    return (
-      <div className="container mx-auto max-w-5xl px-4 py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/3" />
-          <div className="h-4 bg-gray-200 rounded w-1/2" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!instituteMapping || supplierMappings.length === 0) {
-    return (
-      <div className="container mx-auto max-w-5xl px-4 py-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">
-            {t("fetch_page_title")}
-          </h1>
-          <button
-            onClick={() => navigate(returnPath)}
-            className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
-          >
-            <X className="size-5" />
-            <span className="sr-only">Close</span>
-          </button>
-        </div>
-
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-5 w-5 text-red-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">
-                eAushadhi Configuration Required
-              </h3>
-              <div className="mt-2 text-sm text-red-700">
-                <p>
-                  {!instituteMapping
-                    ? "No eAushadhi institute mapping found for this facility."
-                    : "No supplier mappings configured for this facility."}
-                </p>
-                <p className="mt-2">
-                  Please contact your system administrator to configure the
-                  eAushadhi integration mapping for this facility.
-                </p>
-              </div>
-              <div className="mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(returnPath)}
-                  className="border-red-300 text-red-700 hover:bg-red-100"
-                >
-                  Go Back
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Initiate inward fetch API
   const { mutateAsync: initiateInwardFetch } = useMutation({
     mutationFn: (forceRefresh: boolean) =>
@@ -234,17 +155,16 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium text-red-800">
-                eAushadhi Configuration Required
+                {t("fetch_page_config_required")}
               </h3>
               <div className="mt-2 text-sm text-red-700">
                 <p>
                   {!instituteMapping
-                    ? "No eAushadhi institute mapping found for this facility."
-                    : "No supplier mappings configured for this facility."}
+                    ? t("fetch_page_no_institute_mapping")
+                    : t("fetch_page_no_supplier_mappings")}
                 </p>
                 <p className="mt-2">
-                  Please contact your system administrator to configure the
-                  eAushadhi integration mapping for this facility.
+                  {t("fetch_page_contact_admin")}
                 </p>
               </div>
               <div className="mt-4">
@@ -253,7 +173,7 @@ export default function EAusdhadhiDeliveryCreate({ facilityId, locationId }: Pro
                   onClick={() => navigate(returnPath)}
                   className="border-red-300 text-red-700 hover:bg-red-100"
                 >
-                  Go Back
+                  {t("fetch_page_go_back")}
                 </Button>
               </div>
             </div>
