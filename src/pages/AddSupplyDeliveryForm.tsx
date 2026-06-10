@@ -434,7 +434,7 @@ function ProductMappingSelector({
   const { t } = useTranslation(I18NNAMESPACE);
   const [isOpen, setIsOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
-  const canCreateRef = useRef(false);
+  const [canCreate, setCanCreate] = useState<boolean>(false);
   const [isSearching, setIsSearching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
@@ -443,6 +443,7 @@ function ProductMappingSelector({
     if (!eaushadhiDrugId || isSearching) return [];
 
     setIsSearching(true);
+    setCanCreate(false);
     try {
       const response = await request<{
         results: ProductMapping[];
@@ -452,12 +453,13 @@ function ProductMappingSelector({
         eaushadhi_drug_id: eaushadhiDrugId,
       });
       setSearchResults(response.results || []);
-      canCreateRef.current = response.can_create ?? false;
+      setCanCreate(response.can_create ?? false);
       return response.results || [];
     } catch (err) {
       console.error("Error fetching product mappings:", err);
       toast.error(t("supply_form_load_products_error"));
       setSearchResults([]);
+      setCanCreate(false);
       return [];
     } finally {
       setIsSearching(false);
@@ -517,13 +519,13 @@ function ProductMappingSelector({
               <p className="text-xs text-gray-500">
                 {t("supply_form_no_products_found")}
               </p>
-              {canCreateRef.current && (
+              {canCreate && (
                 <Button
                   variant="primary"
                   size="default"
                   type="button"
                   className="mt-4"
-                  onMouseDown={(e) => {
+                  onClick={(e) => {
                     e.preventDefault();
                     setIsOpen(false);
                     setCreateDialogOpen(true);
