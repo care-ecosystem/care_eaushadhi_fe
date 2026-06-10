@@ -77,8 +77,20 @@ interface RowItem {
 }
 
 interface ItemDelivery {
+  id: string;
   status: string;
   quantity_received: string;
+  supply_delivery_id?: string;
+  record_delivery_id?: string;
+}
+
+interface DiscrepancyItem {
+  drug_name: string;
+  available_qty: number;
+  accepted_qty: number;
+  pack_size: number;
+  supply_delivery_ids: string[];
+  record_item_delivery_ids: string[];
 }
 
 interface InwardItem {
@@ -702,7 +714,7 @@ function DeliveryRow({
           />
           {row.quantity_in_units && (
             <span className="text-xs text-gray-500 truncate">
-              Original Qty: {row.quantity_in_units}
+              {t("supply_form_original_qty")} {row.quantity_in_units}
             </span>
           )}
         </div>
@@ -747,6 +759,9 @@ export default function AddSupplyDeliveryForm({
   const [rows, setRows] = useState<RowItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [prefillError, setPrefillError] = useState<string>("");
+  const [discrepancies, setDiscrepancies] = useState<DiscrepancyItem[]>([]);
+  const [isMarkingErrors, setIsMarkingErrors] = useState(false);
+  const [isMarkingAccepted, setIsMarkingAccepted] = useState(false);
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
 
   // Extract inward_record_id from URL query params
@@ -831,6 +846,8 @@ export default function AddSupplyDeliveryForm({
         (item) => item.warehouse_name === supplierWarehouseName,
       );
 
+      const newDiscrepancies: DiscrepancyItem[] = [];
+
       const newRows = filteredItems
         .map((item) => {
           const expiryDate = item.expiry_date
@@ -851,7 +868,33 @@ export default function AddSupplyDeliveryForm({
             0,
           );
 
-          const availableQty = receivedQty - totalConsumedQty;
+          const availableQty = Math.max(receivedQty - totalConsumedQty, 0);
+
+          if (totalConsumedQty > receivedQty) {
+            const currentRecordDeliveryId = inwardRecord.deliveries.find(
+              (d) => d.delivery_order_id === deliveryOrderId,
+            )?.id;
+
+            const activeDeliveries = item.item_deliveries.filter((d) =>
+              currentRecordDeliveryId
+                ? d.record_delivery_id === currentRecordDeliveryId &&
+                  d.status === "ACTIVE"
+                : true,
+            );
+
+            newDiscrepancies.push({
+              drug_name: item.drug_name,
+              available_qty: receivedQty,
+              accepted_qty: activeDeliveries.reduce((acc, cur) => {
+                return acc + parseFloat(cur.quantity_received);
+              }, 0),
+              pack_size: packSize,
+              supply_delivery_ids: activeDeliveries.map(
+                (d) => d.supply_delivery_id as string,
+              ),
+              record_item_delivery_ids: activeDeliveries.map((d) => d.id),
+            });
+          }
 
           return {
             ...EMPTY_ROW(),
@@ -864,9 +907,7 @@ export default function AddSupplyDeliveryForm({
             quantity: String(availableQty),
             accepted_pack_qty: availableQty,
             accepted_qty_in_units: String(packSize * availableQty),
-            quantity_in_units: item.quantity_in_units
-              ? String(Math.floor(parseFloat(item.quantity_in_units)))
-              : "",
+            quantity_in_units: String(packSize * availableQty),
             eaushadhi_drug_name: item.drug_name,
             eaushadhi_drug_id: item.drug_id,
             is_new_batch: true,
@@ -875,6 +916,7 @@ export default function AddSupplyDeliveryForm({
         .filter((row) => row.pack_qty > 0);
 
       setRows(newRows);
+      setDiscrepancies(newDiscrepancies);
       setPrefillError("");
     } catch (err) {
       console.error("Error prefilling data:", err);
@@ -917,6 +959,95 @@ export default function AddSupplyDeliveryForm({
         payload,
       ),
   });
+
+  async function handleMarkDiscrepanciesAsError() {
+    const allSupplyDeliveryIds = discrepancies.flatMap(
+      (d) => d.supply_delivery_ids,
+    );
+    const allRecordItemDeliveryIds = discrepancies.flatMap(
+      (d) => d.record_item_delivery_ids,
+    );
+    if (
+      allSupplyDeliveryIds.length === 0 &&
+      allRecordItemDeliveryIds.length === 0
+    ) {
+      setDiscrepancies([]);
+      return;
+    }
+    setIsMarkingErrors(true);
+    try {
+      await Promise.all([
+        ...allSupplyDeliveryIds.map((id) =>
+          request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
+            status: "entered_in_error",
+          }),
+        ),
+        ...allRecordItemDeliveryIds.map((id) =>
+          request(
+            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+            HttpMethod.PATCH,
+            { status: "REVERSED" },
+          ),
+        ),
+      ]);
+      toast.success(t("supply_form_marked_as_error_success"));
+      setDiscrepancies([]);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["inwardRecord", inwardRecordId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["supplyDeliveries", deliveryOrderId],
+        }),
+      ]);
+    } catch {
+      toast.error(t("supply_form_marked_as_error_failure"));
+    } finally {
+      setIsMarkingErrors(false);
+    }
+  }
+
+  async function handleMarkDiscrepanciesAsAccepted() {
+    const allSupplyDeliveryIds = discrepancies.flatMap(
+      (d) => d.supply_delivery_ids,
+    );
+    const allRecordItemDeliveryIds = discrepancies.flatMap(
+      (d) => d.record_item_delivery_ids,
+    );
+    if (
+      allSupplyDeliveryIds.length === 0 &&
+      allRecordItemDeliveryIds.length === 0
+    ) {
+      setDiscrepancies([]);
+      return;
+    }
+    setIsMarkingAccepted(true);
+    try {
+      await Promise.all([
+        ...allRecordItemDeliveryIds.map((id) =>
+          request(
+            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+            HttpMethod.PATCH,
+            { status: "ACCEPTED" },
+          ),
+        ),
+      ]);
+      toast.success(t("supply_form_marked_as_accepted_success"));
+      setDiscrepancies([]);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["inwardRecord", inwardRecordId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["supplyDeliveries", deliveryOrderId],
+        }),
+      ]);
+    } catch {
+      toast.error(t("supply_form_marked_as_accepted_failure"));
+    } finally {
+      setIsMarkingAccepted(false);
+    }
+  }
 
   function validate(): boolean {
     for (const [i, row] of rows.entries()) {
@@ -1172,6 +1303,77 @@ export default function AddSupplyDeliveryForm({
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={discrepancies.length > 0}
+        onOpenChange={(open) => {
+          if (!open) setDiscrepancies([]);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="size-5" />
+              {t("supply_form_discrepancy_title")}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t("supply_form_discrepancy_desc")}
+          </p>
+          <div className="overflow-x-auto rounded-md border border-gray-200">
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-gray-100">
+                <tr className="divide-x divide-gray-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                    {t("supply_form_col_product")}
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-36">
+                    {t("supply_form_discrepancy_available_qty")}
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-36">
+                    {t("supply_form_discrepancy_accepted_qty")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {discrepancies.map((item, i) => (
+                  <tr key={i} className="divide-x divide-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-800">
+                      {item.drug_name}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {item.available_qty * item.pack_size}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 font-medium">
+                      {item.accepted_qty}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={handleMarkDiscrepanciesAsAccepted}
+              disabled={isMarkingErrors || isMarkingAccepted}
+            >
+              {isMarkingAccepted
+                ? t("supply_form_marking_accepted")
+                : t("supply_form_discrepancy_accept")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleMarkDiscrepanciesAsError}
+              disabled={isMarkingErrors || isMarkingAccepted}
+            >
+              {isMarkingErrors
+                ? t("supply_form_marking_error")
+                : t("supply_form_discrepancy_mark_error")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
