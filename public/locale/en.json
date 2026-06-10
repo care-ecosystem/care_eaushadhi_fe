@@ -211,5 +211,22 @@
   "status_completed": "Completed",
   "status_abandoned": "Abandoned",
   "status_entered_in_error": "Entered in Error",
-  "status_in_progress": "In Progress" 
+  "status_in_progress": "In Progress",
+  "supply_form_create_product_knowledge": "Create Product Knowledge",
+  "create_pk_title": "Create Product Knowledge",
+  "create_pk_field_name": "Name",
+  "create_pk_field_slug": "Slug",
+  "create_pk_slug_hint": "Only lowercase letters, numbers, hyphens and underscores (5–25 characters)",
+  "create_pk_field_category": "Category",
+  "create_pk_select_category": "Select category",
+  "create_pk_no_categories": "No categories available",
+  "create_pk_field_base_unit": "Base Unit",
+  "create_pk_select_base_unit": "Select base unit",
+  "create_pk_submit": "Create",
+  "create_pk_success": "Product knowledge created successfully",
+  "create_pk_error": "Failed to create product knowledge",
+  "create_pk_error_name_required": "Name is required",
+  "create_pk_error_slug_invalid": "Slug must be 5–25 characters and contain only lowercase letters, numbers, hyphens, or underscores",
+  "create_pk_error_category_required": "Category is required",
+  "create_pk_error_base_unit_required": "Base unit is required"
 }
