@@ -92,6 +92,7 @@
   "delivery_fetch_add_tags": "# Add Tags",
   "delivery_fetch_loading_title": "Fetching inward records from eAushadhi",
   "delivery_fetch_loading_desc": "Please wait while we fetch the inward records…",
+  "delivery_fetch_timeout_desc": "This is taking longer than expected. Please check back in a while.",
   "delivery_fetch_redirecting": "Redirecting…",
   "delivery_fetch_sync_failed": "Sync Failed",
   "delivery_fetch_no_records": "No Inward Records Found",

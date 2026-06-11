@@ -6,7 +6,11 @@ import { HttpMethod } from "@/apis/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
-import { I18NNAMESPACE } from "@/lib/contants";
+import {
+  I18NNAMESPACE,
+  POLL_INTERVAL_MS,
+  POLLING_TIMEOUT,
+} from "@/lib/contants";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 interface Props {
@@ -69,8 +73,6 @@ const STATUS_COLORS: Record<string, string> = {
   entered_in_error: "bg-red-100 text-red-700",
 };
 
-const POLL_INTERVAL_MS = 3000;
-
 // ── Inward state machine ───────────────────────────────────────────────────
 type InwardUIState =
   | "loading" // initial load / mid-retry in flight
@@ -117,6 +119,9 @@ export default function EAusdhadhiInwardFetch({
   const isRetryingRef = useRef(false);
   // useState drives re-renders for UI (spinner vs action buttons)
   const [isRetrying, setIsRetrying] = useState(false);
+  const [fetchTimedOut, setFetchTimedOut] = useState(false);
+  const fetchTimedOutRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { inward_date, inward_date_api } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -170,7 +175,8 @@ export default function EAusdhadhiInwardFetch({
         ),
       enabled: !!inward_date,
       refetchInterval: (query) => {
-        // Always read from ref — never stale inside this closure
+        // Always read from refs — never stale inside this closure
+        if (fetchTimedOutRef.current) return false;
         if (isRetryingRef.current) return POLL_INTERVAL_MS;
         const data = query.state.data;
         if (!data) return POLL_INTERVAL_MS;
@@ -222,6 +228,31 @@ export default function EAusdhadhiInwardFetch({
     isInwardLoading,
     inwardRecords,
   );
+
+  // ── Fetch timeout — show message after 10 s of continuous polling ───────
+  useEffect(() => {
+    if (inwardUIState === "fetching" || inwardUIState === "loading") {
+      if (!timeoutRef.current) {
+        timeoutRef.current = setTimeout(() => {
+          fetchTimedOutRef.current = true;
+          setFetchTimedOut(true);
+        }, POLLING_TIMEOUT);
+      }
+    } else {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      fetchTimedOutRef.current = false;
+      setFetchTimedOut(false);
+    }
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [inwardUIState]);
 
   // ── Navigation — fires only when state machine says redirect ────────────
   useEffect(() => {
@@ -285,7 +316,9 @@ export default function EAusdhadhiInwardFetch({
           </h2>
           <Loader2Icon className="animate-spin text-gray-500 size-6" />
           <p className="text-sm text-gray-500">
-            {t("delivery_fetch_loading_desc")}
+            {fetchTimedOut
+              ? t("delivery_fetch_timeout_desc")
+              : t("delivery_fetch_loading_desc")}
           </p>
         </div>
       );

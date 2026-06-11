@@ -885,9 +885,7 @@ export default function AddSupplyDeliveryForm({
             newDiscrepancies.push({
               drug_name: item.drug_name,
               available_qty: receivedQty,
-              accepted_qty: activeDeliveries.reduce((acc, cur) => {
-                return acc + parseFloat(cur.quantity_received);
-              }, 0),
+              accepted_qty: totalConsumedQty,
               pack_size: packSize,
               supply_delivery_ids: activeDeliveries.map(
                 (d) => d.supply_delivery_id as string,
@@ -1345,7 +1343,7 @@ export default function AddSupplyDeliveryForm({
                       {item.available_qty * item.pack_size}
                     </td>
                     <td className="px-3 py-2 text-gray-600 font-medium">
-                      {item.accepted_qty}
+                      {item.accepted_qty * item.pack_size}
                     </td>
                   </tr>
                 ))}
