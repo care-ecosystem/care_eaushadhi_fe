@@ -875,6 +875,10 @@ export default function AddSupplyDeliveryForm({
               (d) => d.delivery_order_id === deliveryOrderId,
             )?.id;
 
+            if (!currentRecordDeliveryId) {
+              return null;
+            }
+
             const activeDeliveries = item.item_deliveries.filter((d) =>
               currentRecordDeliveryId
                 ? d.record_delivery_id === currentRecordDeliveryId &&
@@ -911,7 +915,7 @@ export default function AddSupplyDeliveryForm({
             is_new_batch: true,
           } as RowItem;
         })
-        .filter((row) => row.pack_qty > 0);
+        .filter((row): row is RowItem => row !== null && row.pack_qty > 0);
 
       setRows(newRows);
       setDiscrepancies(newDiscrepancies);

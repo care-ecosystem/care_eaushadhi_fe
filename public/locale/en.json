@@ -205,7 +205,7 @@
   "supply_form_refreshing": "Refreshing...",
   "supply_form_refresh_success": "Successfully refreshed inward data",
   "supply_form_refresh_error": "Failed to refresh inward data",
-  "supply_form_discrepancy_title": "Quantity received from  E-Aushadhi changed",
+  "supply_form_discrepancy_title": "Quantity received from E-Aushadhi changed",
   "supply_form_discrepancy_desc": "The following items have been delivered more than the quantity received from eAushadhi. Please review and choose an action.",
   "supply_form_discrepancy_available_qty": "Available Qty (Units)",
   "supply_form_discrepancy_accepted_qty": "Accepted Qty (Units)",
