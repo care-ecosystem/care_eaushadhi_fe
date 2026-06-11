@@ -988,7 +988,7 @@ export default function AddSupplyDeliveryForm({
           request(
             `/api/care_eaushadhi/record-item-deliveries/${id}/`,
             HttpMethod.PATCH,
-            { status: "REVERSED" },
+            { status: "SOURCE_REVERSED" },
           ),
         ),
       ]);
@@ -1030,7 +1030,7 @@ export default function AddSupplyDeliveryForm({
           request(
             `/api/care_eaushadhi/record-item-deliveries/${id}/`,
             HttpMethod.PATCH,
-            { status: "ACCEPTED" },
+            { status: "ACCEPTED_OVERRIDE" },
           ),
         ),
       ]);
