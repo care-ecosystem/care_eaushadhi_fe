@@ -215,19 +215,41 @@ export default function InstituteMappingAdmin() {
             allow_updating_quantity_after_received:
               allowUpdatingQuantityAfterReceived,
           },
-          supplier_mappings: newSupplierRows
+        },
+      ),
+    onSuccess: async () => {
+      try {
+        const combinedSupplierMappings = [
+          ...supplierRows.map((s) => ({
+            id: s.id,
+            supplier_id: s.supplier_id,
+            eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
+            is_default: s.is_default,
+          })),
+          ...newSupplierRows
             .filter((s) => s.supplier_id)
             .map((s) => ({
               supplier_id: s.supplier_id,
               eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
               is_default: s.is_default,
             })),
-        },
-      ),
-    onSuccess: () => {
-      toast.success(t("drawer_mapping_updated"));
-      queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
-      setSelectedMapping(null);
+        ];
+
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
+
+        toast.success(t("drawer_mapping_updated"));
+        queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
+        setSelectedMapping(null);
+      } catch (error) {
+        console.error("Error updating supplier mappings:", error);
+        toast.error(t("drawer_supplier_mapping_update_error") || "Failed to update supplier mappings");
+      }
     },
     onError: () => toast.error(t("drawer_mapping_update_error")),
   });
@@ -246,18 +268,42 @@ export default function InstituteMappingAdmin() {
           allow_updating_quantity_after_received:
             allowUpdatingQuantityAfterReceived,
         },
-        supplier_mappings: newSupplierRows
-          .filter((s) => s.supplier_id)
-          .map((s) => ({
-            supplier_id: s.supplier_id,
-            eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
-            is_default: s.is_default,
-          })),
       }),
-    onSuccess: () => {
-      toast.success(t("drawer_mapping_created"));
-      queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
-      setSelectedMapping(null);
+    onSuccess: async (response: any) => {
+      try {
+        const newMappingId = response?.id || response?.external_id;
+
+        if (!newMappingId) {
+          throw new Error("No mapping ID returned from create");
+        }
+
+        const combinedSupplierMappings = [
+          ...newSupplierRows
+            .filter((s) => s.supplier_id)
+            .map((s) => ({
+              supplier_id: s.supplier_id,
+              eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
+              is_default: s.is_default,
+            })),
+        ];
+
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
+
+        toast.success(t("drawer_mapping_created"));
+        queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
+        setSelectedMapping(null);
+      } catch (error) {
+        console.error("Error adding supplier mappings to new mapping:", error);
+        toast.error(
+          t("drawer_supplier_mapping_update_error") || "Failed to add supplier mappings"
+        );
+      }
     },
     onError: () => toast.error(t("drawer_mapping_create_error")),
   });
