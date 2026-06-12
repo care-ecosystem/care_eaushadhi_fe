@@ -38,7 +38,11 @@ import {
   SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
 import { I18NNAMESPACE } from "@/lib/contants";
-import { formatDateForEaushadhiAPI } from "@/lib/utils";
+import {
+  formatDateForEaushadhiAPI,
+  extractGenericName,
+  extractDosageFormFilter,
+} from "@/lib/utils";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -74,6 +78,7 @@ interface RowItem {
   eaushadhi_drug_name?: string;
   eaushadhi_drug_id?: string;
   product_mapping_id?: string;
+  suggested_base_unit_code?: string;
 }
 
 interface ItemDelivery {
@@ -166,7 +171,24 @@ const EMPTY_ROW = (): RowItem => ({
   eaushadhi_drug_name: "",
   eaushadhi_drug_id: "",
   product_mapping_id: "",
+  suggested_base_unit_code: "",
 });
+
+function inferBaseUnitCode(drugName: string): string {
+  const forms = extractDosageFormFilter(drugName);
+  if (!forms) return "{count}";
+  if (forms.includes("tablet")) return "{tbl}";
+  if (forms.includes("drop") || forms.includes("eye")) return "[drp]";
+  if (
+    forms.some((f) =>
+      ["injection", "infusion", "solution", "syrup", "suspension"].includes(f),
+    )
+  )
+    return "mL";
+  if (forms.some((f) => ["cream", "gel", "ointment", "powder"].includes(f)))
+    return "g";
+  return "{count}";
+}
 
 const DOSAGE_UNITS = [
   { code: "{tbl}", display: "tablets", system: "http://unitsofmeasure.org" },
@@ -200,6 +222,8 @@ function CreateProductKnowledgeDialog({
   open,
   onOpenChange,
   onCreated,
+  suggestedBaseUnitCode,
+  suggestedName,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
@@ -207,6 +231,8 @@ function CreateProductKnowledgeDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (mapping: ProductMapping) => void;
+  suggestedBaseUnitCode?: string;
+  suggestedName?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const [name, setName] = useState("");
@@ -219,10 +245,11 @@ function CreateProductKnowledgeDialog({
   // Prefill or reset form when dialog opens/closes
   useEffect(() => {
     if (open) {
-      setName(eaushadhiDrugName);
-      setSlugValue(toSlug(eaushadhiDrugName, 25));
+      const displayName = suggestedName || eaushadhiDrugName;
+      setName(displayName);
+      setSlugValue(toSlug(displayName, 25));
       setCategorySlug("");
-      setBaseUnitCode("");
+      setBaseUnitCode(suggestedBaseUnitCode ?? "");
       setErrors({});
     }
   }, [open, eaushadhiDrugName]);
@@ -435,6 +462,8 @@ function ProductMappingSelector({
   value,
   isLoading,
   onSelect,
+  suggestedBaseUnitCode,
+  suggestedName,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
@@ -442,6 +471,8 @@ function ProductMappingSelector({
   value: string;
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
+  suggestedBaseUnitCode?: string;
+  suggestedName?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const [isOpen, setIsOpen] = useState(false);
@@ -568,6 +599,8 @@ function ProductMappingSelector({
         eaushadhiDrugName={eaushadhiDrugName}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        suggestedBaseUnitCode={suggestedBaseUnitCode}
+        suggestedName={suggestedName}
         onCreated={async (mapping) => {
           setSearchResults([]);
           const results = await fetchMappings();
@@ -596,6 +629,7 @@ function DeliveryRow({
   onRemove: () => void;
   allowDeletingInward: boolean;
   allowUpdatingQuantity: boolean;
+  suggestedBaseUnitCode?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const set = useCallback(
@@ -646,6 +680,8 @@ function DeliveryRow({
             value={row.product_mapping_id || ""}
             isLoading={false}
             onSelect={handleSelectMapping}
+            suggestedBaseUnitCode={row.suggested_base_unit_code}
+            suggestedName={row.product_knowledge_name}
           />
           {row.eaushadhi_drug_name && (
             <span className="text-xs text-gray-500 truncate">
@@ -901,7 +937,7 @@ export default function AddSupplyDeliveryForm({
           return {
             ...EMPTY_ROW(),
             record_item_id: item.id,
-            product_knowledge_name: item.drug_name,
+            product_knowledge_name: extractGenericName(item.drug_name),
             batch_number: item.batch_no,
             expiry_date: expiryDate,
             pack_size: packSize,
@@ -913,6 +949,7 @@ export default function AddSupplyDeliveryForm({
             eaushadhi_drug_name: item.drug_name,
             eaushadhi_drug_id: item.drug_id,
             is_new_batch: true,
+            suggested_base_unit_code: inferBaseUnitCode(item.drug_name),
           } as RowItem;
         })
         .filter((row): row is RowItem => row !== null && row.pack_qty > 0);

@@ -50,3 +50,66 @@ export function formatDateForURL(isoDate: string): string {
   const [yyyy, mm, dd] = isoDate.split("-");
   return `${mm}/${dd}/${yyyy}`;
 }
+
+
+const DOSAGE_FORM_MAP: Record<string, string[]> = {
+  tablet: ["tablet"],
+  tablets: ["tablet"],
+  capsule: ["capsule"],
+  capsules: ["capsule"],
+  injection: ["injection"],
+  infusion: ["infusion"],
+  suspension: ["suspension", "drop", "syrup"],
+  syrup: ["syrup", "suspension", "drop"],
+  cream: ["cream"],
+  gel: ["gel"],
+  ointment: ["ointment"],
+  eye: ["eye"],
+  drops: ["drop", "suspension"],
+  powder: ["powder"],
+  solution: ["solution"],
+};
+
+const FORM_MODIFIERS = [
+  /powder\s+free/g,
+  /latex\s+free/g,
+  /preservative\s+free/g,
+  /alcohol\s+free/g,
+];
+
+export function extractDosageFormFilter(drug_name: string): string[] | null {
+  let name_lower = drug_name.toLowerCase();
+  for (const modifier of FORM_MODIFIERS) {
+    name_lower = name_lower.replace(modifier, "");
+  }
+  for (const [keyword, snomed_displays] of Object.entries(DOSAGE_FORM_MAP)) {
+    if (new RegExp(`\\b${keyword}\\b`).test(name_lower)) {
+      return snomed_displays;
+    }
+  }
+  return null;
+}
+
+const FORM_STOP = new Set([
+  // dosage forms
+  "tablet", "tablets", "capsule", "capsules", "injection", "infusion",
+  "suspension", "syrup", "cream", "gel", "ointment", "eye", "ear",
+  "oral", "drops", "powder", "solution", "for", "with",
+  // patient / dose descriptors — not part of the drug substance name
+  "pediatric", "paediatric", "neonatal", "adult", "forte", "junior",
+]);
+
+export function extractGenericName(drug_name: string): string {
+  const words = drug_name.toLowerCase().split(/\s+/);
+  const generic: string[] = [];
+  for (const word of words) {
+    const clean = word.replace(/[^a-z]/g, "");
+    if (FORM_STOP.has(clean)) break;
+    if (/^\d/.test(word)) break;
+    if (clean) {
+      const normalized = word[0].toUpperCase() + word.slice(1);
+      generic.push(normalized);
+    }
+  }
+  return generic.length > 0 ? generic.join(" ") : words[0];
+}
