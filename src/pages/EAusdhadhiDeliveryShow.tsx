@@ -404,7 +404,7 @@ export default function EAusdhadhiDeliveryShow({
                               : "—"}
                           </td>
                           <td className="px-3 py-2 text-gray-600">
-                            {d.supplied_item_quantity}{" "}
+                            {parseFloat(d.supplied_item_quantity).toFixed(2)}{" "}
                             {d.supplied_item?.product_knowledge?.base_unit
                               ?.display ?? ""}
                           </td>
