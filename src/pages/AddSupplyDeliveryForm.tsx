@@ -896,7 +896,7 @@ export default function AddSupplyDeliveryForm({
             (consumedQty, delivery) => {
               if (
                 delivery.status === "ACCEPTED" ||
-                delivery.status == "ACCEPTED_OVERRIDE"
+                delivery.status === "ACCEPTED_OVERRIDE"
               ) {
                 return (
                   consumedQty + parseInt(delivery.quantity_received) / packSize
