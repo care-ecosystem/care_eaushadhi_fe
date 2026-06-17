@@ -894,12 +894,15 @@ export default function AddSupplyDeliveryForm({
 
           const totalConsumedQty = item.item_deliveries.reduce(
             (consumedQty, delivery) => {
-              if (delivery.status !== "ACTIVE") {
-                return consumedQty;
+              if (
+                delivery.status === "ACCEPTED" ||
+                delivery.status === "ACCEPTED_OVERRIDE"
+              ) {
+                return (
+                  consumedQty + parseInt(delivery.quantity_received) / packSize
+                );
               }
-              return (
-                consumedQty + parseInt(delivery.quantity_received) / packSize
-              );
+              return consumedQty;
             },
             0,
           );
@@ -911,27 +914,26 @@ export default function AddSupplyDeliveryForm({
               (d) => d.delivery_order_id === deliveryOrderId,
             )?.id;
 
-            if (!currentRecordDeliveryId) {
-              return null;
+            if (currentRecordDeliveryId) {
+              const activeDeliveries = item.item_deliveries.filter(
+                (d) =>
+                  d.record_delivery_id === currentRecordDeliveryId &&
+                  d.status === "ACCEPTED",
+              );
+
+              if (activeDeliveries.length > 0) {
+                newDiscrepancies.push({
+                  drug_name: item.drug_name,
+                  available_qty: receivedQty,
+                  accepted_qty: totalConsumedQty,
+                  pack_size: packSize,
+                  supply_delivery_ids: activeDeliveries.map(
+                    (d) => d.supply_delivery_id as string,
+                  ),
+                  record_item_delivery_ids: activeDeliveries.map((d) => d.id),
+                });
+              }
             }
-
-            const activeDeliveries = item.item_deliveries.filter((d) =>
-              currentRecordDeliveryId
-                ? d.record_delivery_id === currentRecordDeliveryId &&
-                  d.status === "ACTIVE"
-                : true,
-            );
-
-            newDiscrepancies.push({
-              drug_name: item.drug_name,
-              available_qty: receivedQty,
-              accepted_qty: totalConsumedQty,
-              pack_size: packSize,
-              supply_delivery_ids: activeDeliveries.map(
-                (d) => d.supply_delivery_id as string,
-              ),
-              record_item_delivery_ids: activeDeliveries.map((d) => d.id),
-            });
           }
 
           return {
