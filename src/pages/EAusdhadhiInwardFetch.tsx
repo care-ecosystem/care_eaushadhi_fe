@@ -7,11 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import {
-  I18NNAMESPACE,
-  POLL_INTERVAL_MS,
-  POLLING_TIMEOUT,
-} from "@/lib/contants";
+import { I18NNAMESPACE, POLL_STEP_MS, POLLING_TIMEOUT } from "@/lib/contants";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
 interface Props {
@@ -125,7 +121,8 @@ export default function EAusdhadhiInwardFetch({
   const { meta } = useInstituteMapping();
   // useRef so refetchInterval closure always reads the current value
   const isRetryingRef = useRef(false);
-  // useState drives re-renders for UI (spinner vs action buttons)
+  const pollCountRef = useRef(0);
+
   const [isRetrying, setIsRetrying] = useState(false);
   const [fetchTimedOut, setFetchTimedOut] = useState(false);
   const fetchTimedOutRef = useRef(false);
@@ -185,12 +182,16 @@ export default function EAusdhadhiInwardFetch({
       refetchInterval: (query) => {
         // Always read from refs — never stale inside this closure
         if (fetchTimedOutRef.current) return false;
-        if (isRetryingRef.current) return POLL_INTERVAL_MS;
+        const delay = (pollCountRef.current + 1) * POLL_STEP_MS;
+        if (isRetryingRef.current) return delay;
         const data = query.state.data;
-        if (!data) return POLL_INTERVAL_MS;
+        if (!data) return delay;
         if (data.count === 0) return false;
         const record = data.results[0];
-        if (record?.sync_status === "FETCHING") return POLL_INTERVAL_MS;
+        if (record?.sync_status === "FETCHING") {
+          pollCountRef.current += 1;
+          return delay;
+        }
         // Terminal status — stop polling
         return false;
       },
@@ -232,6 +233,7 @@ export default function EAusdhadhiInwardFetch({
     onSuccess: () => {
       // Set ref first — immediately visible to the refetchInterval closure
       isRetryingRef.current = true;
+      pollCountRef.current = 0;
       setIsRetrying(true);
       queryClient.invalidateQueries({ queryKey: inwardQueryKey });
     },
