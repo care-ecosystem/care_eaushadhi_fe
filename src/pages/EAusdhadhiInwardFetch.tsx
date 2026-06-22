@@ -6,6 +6,7 @@ import { HttpMethod } from "@/apis/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   I18NNAMESPACE,
   POLL_INTERVAL_MS,
@@ -53,7 +54,14 @@ interface InwardRecord {
   sync_status: string;
   items_initial_count: number;
   items_current_count: number;
+  meta?: {
+    error_code?: string;
+    error_message?: string;
+    error_details?: Record<string, unknown>;
+    failed_at?: string;
+  } | null;
 }
+
 interface InwardRecordsResponse {
   count: number;
   results: InwardRecord[];
@@ -187,6 +195,26 @@ export default function EAusdhadhiInwardFetch({
         return false;
       },
     });
+
+  useEffect(() => {
+    const record = inwardRecords?.results[0];
+
+    if (record?.sync_status === "FAILED") {
+      // Build error message from meta if available, otherwise use generic
+      let errorMsg = "Failed to fetch inward records from eAushadhi";
+
+      if (record?.meta?.error_code && record?.meta?.error_message) {
+        errorMsg = `${record.meta.error_code}: ${record.meta.error_message}`;
+      } else if (record?.meta?.error_code) {
+        errorMsg = record.meta.error_code;
+      } else if (record?.meta?.error_message) {
+        errorMsg = record.meta.error_message;
+      }
+
+      toast.error(errorMsg);
+    }
+  }, [inwardRecords?.results[0]?.sync_status, inwardRecords?.results[0]?.meta]);
+  // ═══════════════════════════════════════════════════════════════════════
 
   // ── Initiate inward fetch ───────────────────────────────────────────────
   const { mutate: initiateInwardFetch, isPending: isInitiating } = useMutation({
