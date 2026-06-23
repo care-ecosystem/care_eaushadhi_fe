@@ -106,7 +106,7 @@ function extractErrorDetailsFromSuperBatch(
 
 
 function formatErrorMessage(errors: ErrorDetail[]): string {
-  if (errors.length === 0) return "An error occurred";
+  if (errors.length === 0) return t("supply_form_unexpected_error");
 
   const byRef = new Map<string, ErrorDetail[]>();
   errors.forEach((err) => {
