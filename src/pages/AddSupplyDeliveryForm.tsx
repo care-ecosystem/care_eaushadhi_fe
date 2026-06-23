@@ -45,6 +45,82 @@ import {
 } from "@/lib/utils";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
+// ─── Error Handling Utilities (inline) ──────────────────────────────────────
+interface ErrorDetail {
+  reference_id: string;
+  field?: string;
+  message: string;
+  type?: string;
+}
+
+function extractErrorDetailsFromSuperBatch(
+  results: any[]
+): ErrorDetail[] {
+  const errors: ErrorDetail[] = [];
+
+  results.forEach((result) => {
+    if (result.status_code > 299) {
+      const data = result.data as any;
+
+      if (Array.isArray(data?.errors)) {
+        data.errors.forEach((err: any) => {
+          if (err.type === "validation_error" && err.msg) {
+            // err.msg is an object like { quantity_received: [message] }
+            Object.entries(err.msg).forEach(([field, messages]: [string, any]) => {
+              const fieldMessages = Array.isArray(messages) ? messages : [messages];
+              fieldMessages.forEach((msg: string) => {
+                errors.push({
+                  reference_id: result.reference_id,
+                  field,
+                  message: msg,
+                  type: err.type,
+                });
+              });
+            });
+          } else if (err.msg && typeof err.msg === "string") {
+            errors.push({
+              reference_id: result.reference_id,
+              message: err.msg,
+              type: err.type,
+            });
+          }
+        });
+      }
+      else if (data?.detail && typeof data.detail === "string") {
+        errors.push({
+          reference_id: result.reference_id,
+          message: data.detail,
+        });
+      }
+      else if (data?.message && typeof data.message === "string") {
+        errors.push({
+          reference_id: result.reference_id,
+          message: data.message,
+        });
+      }
+    }
+  });
+
+  return errors;
+}
+
+
+function formatErrorMessage(errors: ErrorDetail[]): string {
+  if (errors.length === 0) return "An error occurred";
+
+  const byRef = new Map<string, ErrorDetail[]>();
+  errors.forEach((err) => {
+    if (!byRef.has(err.reference_id)) {
+      byRef.set(err.reference_id, []);
+    }
+    byRef.get(err.reference_id)!.push(err);
+  });
+
+  const messages = errors.map((e) => e.message);
+
+  return messages.join("\n");
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface ProductKnowledge {
   id: string;
@@ -1185,14 +1261,30 @@ export default function AddSupplyDeliveryForm({
       onSuccess();
     } catch (err) {
       if (err instanceof SuperBatchError) {
-        const firstError = err.failed?.[0];
-        toast.error(
-          `Failed: ${
-            (firstError?.data as any)?.detail ??
-            firstError?.status_code ??
-            t("supply_form_unexpected_error")
-          }`,
-        );
+        // Extract detailed validation errors from nested response structure
+        const errorDetails = extractErrorDetailsFromSuperBatch(err.results);
+
+        if (errorDetails.length > 0) {
+          // Show detailed error message with field names
+          const errorMessage = formatErrorMessage(errorDetails);
+          toast.error(errorMessage);
+        } else {
+          // Fallback: show first failed result's status code
+          const firstFailed = err.failed?.[0];
+          toast.error(
+            `Failed: ${
+              (firstFailed?.data as any)?.detail ??
+              firstFailed?.status_code ??
+              t("supply_form_unexpected_error")
+            }`,
+          );
+        }
+
+        console.error("SuperBatchError details:", {
+          results: err.results,
+          failed: err.failed,
+          status: err.status,
+        });
       } else if (err instanceof Error) {
         toast.error(err.message);
       } else {
