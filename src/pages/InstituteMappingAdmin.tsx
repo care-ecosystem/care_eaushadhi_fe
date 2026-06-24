@@ -184,6 +184,10 @@ export default function InstituteMappingAdmin() {
     allowUpdatingQuantityAfterReceived,
     setAllowUpdatingQuantityAfterReceived,
   ] = useState(false);
+  const [
+    allowCreatingProductKnowledge,
+    setAllowCreatingProductKnowledge,
+  ] = useState(false);
 
   // Load plugin config on mount (from window.__CARE_PLUGIN_RUNTIME__)
   useEffect(() => {
@@ -220,15 +224,10 @@ export default function InstituteMappingAdmin() {
   };
 
   /**
-   * Check if any settings section should be visible
+   * Settings section is always visible (for allow_creating_product_knowledge)
    */
   const settingsVisible = (): boolean => {
-    return !!(
-      pluginConfig?.config?.disable_inward_date ||
-      pluginConfig?.config?.manual_addition ||
-      pluginConfig?.config?.allow_deleting_inward_after_fetch ||
-      pluginConfig?.config?.allow_updating_quantity_after_received
-    );
+    return true;
   };
 
   // ─── Queries ───────────────────────────────────────────────────────────
@@ -268,7 +267,7 @@ export default function InstituteMappingAdmin() {
     mutationFn: async () => {
       if (!selectedMapping?.id) throw new Error("No mapping ID");
 
-      const payload: UpdateInstitutePayload = {
+      const payload = {
         schema_version: schemaVersion || SCHEMA_VERSIONS[0],
         credentials_ref: credentialsRef || DEFAULT_CREDENTIALS_REF,
         meta: {
@@ -276,6 +275,7 @@ export default function InstituteMappingAdmin() {
           manual_addition: manualAddition,
           allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
           allow_updating_quantity_after_received: allowUpdatingQuantityAfterReceived,
+          allow_creating_product_knowledge: allowCreatingProductKnowledge,
         },
       };
 
@@ -320,7 +320,7 @@ export default function InstituteMappingAdmin() {
 
   const { mutate: createMapping, isPending: isCreating } = useMutation({
     mutationFn: async () => {
-      const payload: CreateInstitutePayload = {
+      const payload = {
         facility_id: facilityId,
         eaushadhi_institute_id: instituteId,
         schema_version: schemaVersion || SCHEMA_VERSIONS[0],
@@ -330,6 +330,7 @@ export default function InstituteMappingAdmin() {
           manual_addition: manualAddition,
           allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
           allow_updating_quantity_after_received: allowUpdatingQuantityAfterReceived,
+          allow_creating_product_knowledge: allowCreatingProductKnowledge,
         },
       };
 
@@ -385,6 +386,9 @@ export default function InstituteMappingAdmin() {
     setAllowUpdatingQuantityAfterReceived(
       m.meta?.allow_updating_quantity_after_received ?? false
     );
+    setAllowCreatingProductKnowledge(
+      m.meta?.allow_creating_product_knowledge ?? false
+    );
     setSupplierRows(m.supplier_mappings);
     setNewSupplierRows([]);
   };
@@ -401,6 +405,7 @@ export default function InstituteMappingAdmin() {
         manual_addition: false,
         allow_deleting_inward_after_fetch: false,
         allow_updating_quantity_after_received: false,
+        allow_creating_product_knowledge: false,
       },
       supplier_mappings: [],
     });
@@ -412,6 +417,7 @@ export default function InstituteMappingAdmin() {
     setManualAddition(false);
     setAllowDeletingInwardAfterFetch(false);
     setAllowUpdatingQuantityAfterReceived(false);
+    setAllowCreatingProductKnowledge(false);
     setSupplierRows([]);
     setNewSupplierRows([]);
   };
@@ -1081,6 +1087,29 @@ export default function InstituteMappingAdmin() {
                         />
                       </Field>
                     )}
+
+                    {/* NEW: Always show allow_creating_product_knowledge */}
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-creating-product-knowledge"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_allow_creating_product_knowledge_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_creating_product_knowledge_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-creating-product-knowledge"
+                        checked={allowCreatingProductKnowledge}
+                        onCheckedChange={setAllowCreatingProductKnowledge}
+                      />
+                    </Field>
                   </div>
                 </div>
               )}

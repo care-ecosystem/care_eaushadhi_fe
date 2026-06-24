@@ -44,6 +44,7 @@ export type InstituteMapping = {
     manual_addition: boolean;
     allow_deleting_inward_after_fetch: boolean;
     allow_updating_quantity_after_received: boolean;
+    allow_creating_product_knowledge: boolean;
   };
   supplier_mappings: SupplierMapping[];
 };
