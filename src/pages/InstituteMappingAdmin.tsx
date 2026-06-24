@@ -15,6 +15,16 @@ import { I18NNAMESPACE } from "@/lib/contants";
 const SCHEMA_VERSIONS = ["1.0"];
 const DEFAULT_CREDENTIALS_REF = "EAUSHADHI_API_SECRET_KEY";
 
+interface PluginConfig {
+  url: string;
+  schema_version?: string;
+  credentials_ref?: string;
+  disable_inward_date?: string;
+  manual_addition?: string;
+  allow_deleting_inward_after_fetch?: string;
+  allow_updating_quantity_after_received?: string;
+}
+
 interface SupplierMapping {
   id: string;
   supplier_id: string;
@@ -152,6 +162,7 @@ export default function InstituteMappingAdmin() {
   const { t } = useTranslation(I18NNAMESPACE);
   const [selectedMapping, setSelectedMapping] =
     useState<InstituteMapping | null>(null);
+  const [pluginConfig, setPluginConfig] = useState<PluginConfig | null>(null);
   const [supplierRows, setSupplierRows] = useState<SupplierMapping[]>([]);
   const [newSupplierRows, setNewSupplierRows] = useState<NewSupplierRow[]>([]);
   const [facilityId, setFacilityId] = useState("");
@@ -166,6 +177,78 @@ export default function InstituteMappingAdmin() {
     allowUpdatingQuantityAfterReceived,
     setAllowUpdatingQuantityAfterReceived,
   ] = useState(false);
+
+  useEffect(() => {
+    const loadPluginConfig = async () => {
+      try {
+        const response = await request<{
+          configs: Array<{ slug: string; meta: Record<string, any> }>;
+        }>(
+          `/api/v1/plug_config/`,
+          HttpMethod.GET,
+        );
+
+        if (response?.configs && Array.isArray(response.configs)) {
+          const pluginConfig = response.configs.find(
+            (config) => config.meta && typeof config.meta.url === "string"
+          );
+          
+          if (pluginConfig?.meta) {
+            setPluginConfig(pluginConfig.meta as PluginConfig);
+            console.log(
+              `Loaded plugin config from slug: "${pluginConfig.slug}"`
+            );
+          } else {
+            console.warn(
+              "No plugin config with 'url' field found in plug_config response"
+            );
+            setPluginConfig(null);
+          }
+        } else {
+          console.warn("Invalid plug_config response structure");
+          setPluginConfig(null);
+        }
+      } catch (error) {
+        console.warn("Plugin config endpoint error:", error);
+        setPluginConfig(null);
+      }
+    };
+
+    loadPluginConfig();
+  }, []);
+
+  const isFieldVisible = (fieldKey: string): boolean => {
+    if (!pluginConfig) return false;
+    const value = pluginConfig[fieldKey as keyof PluginConfig];
+    return (
+      typeof value === "string" && value.trim().toLowerCase() === "enable"
+    );
+  };
+
+  const getFieldLabel = (fieldKey: string): string => {
+    const labels: Record<string, string> = {
+      schema_version: t("drawer_schema_version_label"),
+      credentials_ref: t("drawer_credentials_ref_label"),
+      disable_inward_date: t("drawer_disable_inward_date_label"),
+      manual_addition: t("drawer_manual_addition_label"),
+      allow_deleting_inward_after_fetch: t(
+        "drawer_allow_deleting_inward_label"
+      ),
+      allow_updating_quantity_after_received: t(
+        "drawer_allow_updating_quantity_label"
+      ),
+    };
+    return labels[fieldKey] || "";
+  };
+
+  const isAnysettingVisible = (): boolean => {
+    return (
+      isFieldVisible("disable_inward_date") ||
+      isFieldVisible("manual_addition") ||
+      isFieldVisible("allow_deleting_inward_after_fetch") ||
+      isFieldVisible("allow_updating_quantity_after_received")
+    );
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["institute-mappings-admin"],
@@ -201,22 +284,40 @@ export default function InstituteMappingAdmin() {
   const mappings = data?.results ?? [];
 
   const { mutate: saveMapping, isPending: isSaving } = useMutation({
-    mutationFn: () =>
-      request(
+    mutationFn: () => {
+      const payload: any = {
+        schema_version: isFieldVisible("schema_version")
+          ? schemaVersion
+          : SCHEMA_VERSIONS[0],
+        credentials_ref: isFieldVisible("credentials_ref")
+          ? credentialsRef
+          : DEFAULT_CREDENTIALS_REF,
+        meta: {
+          disable_inward_date: isFieldVisible("disable_inward_date")
+            ? disableInwardDate
+            : false,
+          manual_addition: isFieldVisible("manual_addition")
+            ? manualAddition
+            : false,
+          allow_deleting_inward_after_fetch: isFieldVisible(
+            "allow_deleting_inward_after_fetch"
+          )
+            ? allowDeletingInwardAfterFetch
+            : false,
+          allow_updating_quantity_after_received: isFieldVisible(
+            "allow_updating_quantity_after_received"
+          )
+            ? allowUpdatingQuantityAfterReceived
+            : false,
+        },
+      };
+
+      return request(
         `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/`,
         HttpMethod.PATCH,
-        {
-          schema_version: schemaVersion,
-          credentials_ref: credentialsRef,
-          meta: {
-            disable_inward_date: disableInwardDate,
-            manual_addition: manualAddition,
-            allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
-            allow_updating_quantity_after_received:
-              allowUpdatingQuantityAfterReceived,
-          },
-        },
-      ),
+        payload,
+      );
+    },
     onSuccess: async () => {
       try {
         const combinedSupplierMappings = [
@@ -255,20 +356,42 @@ export default function InstituteMappingAdmin() {
   });
 
   const { mutate: createMapping, isPending: isCreating } = useMutation({
-    mutationFn: () =>
-      request(`/api/care_eaushadhi/institute-mappings/`, HttpMethod.POST, {
+    mutationFn: () => {
+      const payload: any = {
         facility_id: facilityId,
         eaushadhi_institute_id: instituteId,
-        schema_version: schemaVersion,
-        credentials_ref: credentialsRef,
+        schema_version: isFieldVisible("schema_version")
+          ? schemaVersion
+          : SCHEMA_VERSIONS[0],
+        credentials_ref: isFieldVisible("credentials_ref")
+          ? credentialsRef
+          : DEFAULT_CREDENTIALS_REF,
         meta: {
-          disable_inward_date: disableInwardDate,
-          manual_addition: manualAddition,
-          allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
-          allow_updating_quantity_after_received:
-            allowUpdatingQuantityAfterReceived,
+          disable_inward_date: isFieldVisible("disable_inward_date")
+            ? disableInwardDate
+            : false,
+          manual_addition: isFieldVisible("manual_addition")
+            ? manualAddition
+            : false,
+          allow_deleting_inward_after_fetch: isFieldVisible(
+            "allow_deleting_inward_after_fetch"
+          )
+            ? allowDeletingInwardAfterFetch
+            : false,
+          allow_updating_quantity_after_received: isFieldVisible(
+            "allow_updating_quantity_after_received"
+          )
+            ? allowUpdatingQuantityAfterReceived
+            : false,
         },
-      }),
+      };
+
+      return request(
+        `/api/care_eaushadhi/institute-mappings/`,
+        HttpMethod.POST,
+        payload,
+      );
+    },
     onSuccess: async (response: any) => {
       try {
         const newMappingId = response?.id || response?.external_id;
@@ -548,35 +671,41 @@ export default function InstituteMappingAdmin() {
                       {t("drawer_institute_id_hint")}
                     </p>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 mb-1 block">
-                      {t("drawer_schema_version_label")}
-                    </label>
-                    <SupplierSelect
-                      options={SCHEMA_VERSIONS.map((v) => ({ id: v, name: v }))}
-                      value={schemaVersion}
-                      onChange={(id) => setSchemaVersion(id)}
-                      placeholder={t("drawer_schema_version_placeholder")}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t("drawer_schema_version_hint")}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 mb-1 block">
-                      {t("drawer_credentials_ref_label")}{" "}
-                      <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      value={credentialsRef}
-                      onChange={(e) => setCredentialsRef(e.target.value)}
-                      className="h-9"
-                      placeholder={DEFAULT_CREDENTIALS_REF}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t("drawer_credentials_ref_hint")}
-                    </p>
-                  </div>
+
+                  {isFieldVisible("schema_version") && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-900 mb-1 block">
+                        {getFieldLabel("schema_version")}
+                      </label>
+                      <SupplierSelect
+                        options={SCHEMA_VERSIONS.map((v) => ({ id: v, name: v }))}
+                        value={schemaVersion}
+                        onChange={(id) => setSchemaVersion(id)}
+                        placeholder={t("drawer_schema_version_placeholder")}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t("drawer_schema_version_hint")}
+                      </p>
+                    </div>
+                  )}
+
+                  {isFieldVisible("credentials_ref") && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-900 mb-1 block">
+                        {getFieldLabel("credentials_ref")}{" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        value={credentialsRef}
+                        onChange={(e) => setCredentialsRef(e.target.value)}
+                        className="h-9"
+                        placeholder={DEFAULT_CREDENTIALS_REF}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t("drawer_credentials_ref_hint")}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -790,7 +919,7 @@ export default function InstituteMappingAdmin() {
                           />
                           <div className="flex items-center gap-2">
                             <input
-                              type="checkbox"
+                              type="checked"
                               id={`same-as-supplier-new-${idx}`}
                               className="size-3.5 cursor-pointer"
                               checked={
@@ -890,7 +1019,7 @@ export default function InstituteMappingAdmin() {
 
               <hr className="border-gray-200" />
 
-              {/* Settings */}
+              {isAnysettingVisible() && (
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-1">
                   {t("drawer_settings_title")}
@@ -899,92 +1028,104 @@ export default function InstituteMappingAdmin() {
                   {t("drawer_settings_subtitle")}
                 </p>
                 <div className="space-y-5">
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="disable-inward-date"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_disable_inward_date_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_disable_inward_date_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="disable-inward-date"
-                      checked={disableInwardDate}
-                      onCheckedChange={setDisableInwardDate}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="manual-addition"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_manual_addition_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_manual_addition_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="manual-addition"
-                      checked={manualAddition}
-                      onCheckedChange={setManualAddition}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="allow-deleting-inward"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_allow_deleting_inward_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_allow_deleting_inward_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="allow-deleting-inward"
-                      checked={allowDeletingInwardAfterFetch}
-                      onCheckedChange={setAllowDeletingInwardAfterFetch}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="allow-updating-quantity"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_allow_updating_quantity_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_allow_updating_quantity_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="allow-updating-quantity"
-                      checked={allowUpdatingQuantityAfterReceived}
-                      onCheckedChange={setAllowUpdatingQuantityAfterReceived}
-                    />
-                  </Field>
+                  {isFieldVisible("disable_inward_date") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="disable-inward-date"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {getFieldLabel("disable_inward_date")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_disable_inward_date_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="disable-inward-date"
+                        checked={disableInwardDate}
+                        onCheckedChange={setDisableInwardDate}
+                      />
+                    </Field>
+                  )}
+
+                  {isFieldVisible("manual_addition") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="manual-addition"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {getFieldLabel("manual_addition")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_manual_addition_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="manual-addition"
+                        checked={manualAddition}
+                        onCheckedChange={setManualAddition}
+                      />
+                    </Field>
+                  )}
+
+                  {isFieldVisible("allow_deleting_inward_after_fetch") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-deleting-inward"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {getFieldLabel("allow_deleting_inward_after_fetch")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_deleting_inward_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-deleting-inward"
+                        checked={allowDeletingInwardAfterFetch}
+                        onCheckedChange={setAllowDeletingInwardAfterFetch}
+                      />
+                    </Field>
+                  )}
+
+                  {isFieldVisible("allow_updating_quantity_after_received") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-updating-quantity"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {getFieldLabel("allow_updating_quantity_after_received")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_updating_quantity_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-updating-quantity"
+                        checked={allowUpdatingQuantityAfterReceived}
+                        onCheckedChange={setAllowUpdatingQuantityAfterReceived}
+                      />
+                    </Field>
+                  )}
                 </div>
               </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -1006,7 +1147,7 @@ export default function InstituteMappingAdmin() {
                       toast.error(t("drawer_institute_id_required"));
                       return;
                     }
-                    if (!credentialsRef) {
+                    if (isFieldVisible("credentials_ref") && !credentialsRef) {
                       toast.error(t("drawer_credentials_required"));
                       return;
                     }
