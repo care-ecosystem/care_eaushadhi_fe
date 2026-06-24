@@ -110,7 +110,7 @@ function SupplierSelect({
       </button>
 
       {open && !disabled && (
-        <div className="absolute top-full left-0 z-30 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute top-full left-0 z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
           {options.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-4">
               {t("drawer_no_options")}
@@ -167,10 +167,8 @@ export default function InstituteMappingAdmin() {
     allowUpdatingQuantityAfterReceived,
     setAllowUpdatingQuantityAfterReceived,
   ] = useState(false);
-  const [
-    allowCreatingProductKnowledge,
-    setAllowCreatingProductKnowledge,
-  ] = useState(false);
+  const [allowCreatingProductKnowledge, setAllowCreatingProductKnowledge] =
+    useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["institute-mappings-admin"],
@@ -250,11 +248,16 @@ export default function InstituteMappingAdmin() {
         );
 
         toast.success(t("drawer_mapping_updated"));
-        queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
+        queryClient.invalidateQueries({
+          queryKey: ["institute-mappings-admin"],
+        });
         setSelectedMapping(null);
       } catch (error) {
         console.error("Error updating supplier mappings:", error);
-        toast.error(t("drawer_supplier_mapping_update_error") || "Failed to update supplier mappings");
+        toast.error(
+          t("drawer_supplier_mapping_update_error") ||
+            "Failed to update supplier mappings",
+        );
       }
     },
     onError: () => toast.error(t("drawer_mapping_update_error")),
@@ -303,12 +306,15 @@ export default function InstituteMappingAdmin() {
         );
 
         toast.success(t("drawer_mapping_created"));
-        queryClient.invalidateQueries({ queryKey: ["institute-mappings-admin"] });
+        queryClient.invalidateQueries({
+          queryKey: ["institute-mappings-admin"],
+        });
         setSelectedMapping(null);
       } catch (error) {
         console.error("Error adding supplier mappings to new mapping:", error);
         toast.error(
-          t("drawer_supplier_mapping_update_error") || "Failed to add supplier mappings"
+          t("drawer_supplier_mapping_update_error") ||
+            "Failed to add supplier mappings",
         );
       }
     },
@@ -605,97 +611,62 @@ export default function InstituteMappingAdmin() {
 
                 <div className="space-y-3">
                   {/* Existing rows */}
-                  {supplierRows.map((s, idx) => (
-                    <div
-                      key={s.id}
-                      className="border border-gray-200 rounded-lg p-3 space-y-3"
-                    >
-                      <div className="grid grid-cols-2 gap-3 items-start">
+                  {supplierRows.map((s, idx) => {
+                    const usedIds = new Set([
+                      ...supplierRows
+                        .filter((_, i) => i !== idx)
+                        .map((r) => r.supplier_id),
+                      ...newSupplierRows.map((r) => r.supplier_id),
+                    ]);
+                    return (
+                      <div
+                        key={s.id}
+                        className="border border-gray-200 rounded-lg p-3 space-y-3"
+                      >
                         <div className="space-y-2">
                           <label className="text-xs font-medium text-gray-600">
                             {t("drawer_col_supplier")}
                           </label>
-                          <SupplierSelect
-                            options={suppliers.map((sup) => ({
-                              id: sup.id,
-                              name: sup.name,
-                            }))}
-                            value={s.supplier_id}
-                            onChange={(id, name) => {
-                              setSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        supplier_id: id,
-                                        supplier_name: name,
-                                        eaushadhi_warehouse_name:
-                                          r.eaushadhi_warehouse_name || name,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                            placeholder={t("drawer_supplier_placeholder")}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-gray-600">
-                            {t("drawer_col_warehouse")}
-                          </label>
-                          <Input
-                            value={s.eaushadhi_warehouse_name}
-                            onChange={(e) =>
-                              setSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        eaushadhi_warehouse_name:
-                                          e.target.value,
-                                      }
-                                    : r,
-                                ),
-                              )
-                            }
-                            placeholder={t("drawer_warehouse_placeholder")}
-                            className="h-9 text-sm"
-                          />
                           <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`same-as-supplier-${s.id}`}
-                              className="size-3.5 cursor-pointer"
-                              checked={
-                                s.eaushadhi_warehouse_name ===
-                                  s.supplier_name && !!s.supplier_name
-                              }
-                              onChange={(e) =>
+                            <div className="flex-1">
+                              <SupplierSelect
+                                options={suppliers
+                                  .filter((sup) => !usedIds.has(sup.id))
+                                  .map((sup) => ({
+                                    id: sup.id,
+                                    name: sup.name,
+                                  }))}
+                                value={s.supplier_id}
+                                onChange={(id, name) => {
+                                  setSupplierRows((rows) =>
+                                    rows.map((r, i) =>
+                                      i === idx
+                                        ? {
+                                            ...r,
+                                            supplier_id: id,
+                                            supplier_name: name,
+                                            eaushadhi_warehouse_name: name,
+                                          }
+                                        : r,
+                                    ),
+                                  );
+                                }}
+                                placeholder={t("drawer_supplier_placeholder")}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
                                 setSupplierRows((rows) =>
-                                  rows.map((r, i) =>
-                                    i === idx
-                                      ? {
-                                          ...r,
-                                          eaushadhi_warehouse_name: e.target
-                                            .checked
-                                            ? r.supplier_name
-                                            : "",
-                                        }
-                                      : r,
-                                  ),
+                                  rows.filter((r) => r.id !== s.id),
                                 )
                               }
-                            />
-                            <label
-                              htmlFor={`same-as-supplier-${s.id}`}
-                              className="text-xs text-gray-500 cursor-pointer"
+                              className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
                             >
-                              {t("drawer_same_as_supplier")}
-                            </label>
+                              <Trash2 className="size-4" />
+                            </button>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
                         <Field
                           orientation="horizontal"
                           className="items-center gap-2"
@@ -709,6 +680,12 @@ export default function InstituteMappingAdmin() {
                                   rows.map((r) => ({
                                     ...r,
                                     is_default: r.id === s.id,
+                                  })),
+                                );
+                                setNewSupplierRows((rows) =>
+                                  rows.map((r) => ({
+                                    ...r,
+                                    is_default: false,
                                   })),
                                 );
                               } else {
@@ -729,112 +706,66 @@ export default function InstituteMappingAdmin() {
                             {t("drawer_make_default")}
                           </FieldLabel>
                         </Field>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSupplierRows((rows) =>
-                              rows.filter((r) => r.id !== s.id),
-                            )
-                          }
-                          className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
-                  {newSupplierRows.map((s, idx) => (
-                    <div
-                      key={s.tempId}
-                      className="border border-gray-200 rounded-lg p-3 space-y-3"
-                    >
-                      <div className="grid grid-cols-2 gap-3 items-start">
+                  {newSupplierRows.map((s, idx) => {
+                    const usedIds = new Set([
+                      ...supplierRows.map((r) => r.supplier_id),
+                      ...newSupplierRows
+                        .filter((_, i) => i !== idx)
+                        .map((r) => r.supplier_id),
+                    ]);
+                    return (
+                      <div
+                        key={s.tempId}
+                        className="border border-gray-200 rounded-lg p-3 space-y-3"
+                      >
                         <div className="space-y-2">
                           <label className="text-xs font-medium text-gray-600">
                             {t("drawer_col_supplier")}
                           </label>
-                          <SupplierSelect
-                            options={suppliers.map((sup) => ({
-                              id: sup.id,
-                              name: sup.name,
-                            }))}
-                            value={s.supplier_id}
-                            onChange={(id, name) => {
-                              setNewSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        supplier_id: id,
-                                        supplier_name: name,
-                                        eaushadhi_warehouse_name:
-                                          r.eaushadhi_warehouse_name || name,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                            placeholder={t("drawer_supplier_placeholder")}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-gray-600">
-                            {t("drawer_col_warehouse")}
-                          </label>
-                          <Input
-                            value={s.eaushadhi_warehouse_name}
-                            onChange={(e) =>
-                              setNewSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        eaushadhi_warehouse_name:
-                                          e.target.value,
-                                      }
-                                    : r,
-                                ),
-                              )
-                            }
-                            placeholder={t("drawer_warehouse_placeholder")}
-                            className="h-9 text-sm"
-                          />
                           <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`same-as-supplier-new-${idx}`}
-                              className="size-3.5 cursor-pointer"
-                              checked={
-                                s.eaushadhi_warehouse_name ===
-                                  s.supplier_name && !!s.supplier_name
-                              }
-                              onChange={(e) =>
+                            <div className="flex-1">
+                              <SupplierSelect
+                                options={suppliers
+                                  .filter((sup) => !usedIds.has(sup.id))
+                                  .map((sup) => ({
+                                    id: sup.id,
+                                    name: sup.name,
+                                  }))}
+                                value={s.supplier_id}
+                                onChange={(id, name) => {
+                                  setNewSupplierRows((rows) =>
+                                    rows.map((r, i) =>
+                                      i === idx
+                                        ? {
+                                            ...r,
+                                            supplier_id: id,
+                                            supplier_name: name,
+                                            eaushadhi_warehouse_name: name,
+                                          }
+                                        : r,
+                                    ),
+                                  );
+                                }}
+                                placeholder={t("drawer_supplier_placeholder")}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
                                 setNewSupplierRows((rows) =>
-                                  rows.map((r, i) =>
-                                    i === idx
-                                      ? {
-                                          ...r,
-                                          eaushadhi_warehouse_name: e.target
-                                            .checked
-                                            ? r.supplier_name
-                                            : "",
-                                        }
-                                      : r,
-                                  ),
+                                  rows.filter((_, i) => i !== idx),
                                 )
                               }
-                            />
-                            <label
-                              htmlFor={`same-as-supplier-new-${idx}`}
-                              className="text-xs text-gray-500 cursor-pointer"
+                              className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
                             >
-                              {t("drawer_same_as_supplier")}
-                            </label>
+                              <Trash2 className="size-4" />
+                            </button>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
                         <Field
                           orientation="horizontal"
                           className="items-center gap-2"
@@ -848,6 +779,12 @@ export default function InstituteMappingAdmin() {
                                   rows.map((r, i) => ({
                                     ...r,
                                     is_default: i === idx,
+                                  })),
+                                );
+                                setSupplierRows((rows) =>
+                                  rows.map((r) => ({
+                                    ...r,
+                                    is_default: false,
                                   })),
                                 );
                               } else {
@@ -866,20 +803,9 @@ export default function InstituteMappingAdmin() {
                             {t("drawer_make_default")}
                           </FieldLabel>
                         </Field>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setNewSupplierRows((rows) =>
-                              rows.filter((_, i) => i !== idx),
-                            )
-                          }
-                          className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {supplierRows.length === 0 &&
                     newSupplierRows.length === 0 && (
@@ -890,14 +816,17 @@ export default function InstituteMappingAdmin() {
                 </div>
 
                 {/* Add another supplier */}
-                <button
-                  type="button"
-                  onClick={addNewSupplierRow}
-                  className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
-                >
-                  <span className="text-base">+</span>{" "}
-                  {t("drawer_add_supplier")}
-                </button>
+                {suppliers.length >
+                  supplierRows.length + newSupplierRows.length && (
+                  <button
+                    type="button"
+                    onClick={addNewSupplierRow}
+                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
+                  >
+                    <span className="text-base">+</span>{" "}
+                    {t("drawer_add_supplier")}
+                  </button>
+                )}
               </div>
 
               <hr className="border-gray-200" />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation } from "@tanstack/react-query";
@@ -54,11 +54,18 @@ export default function EAusdhadhiDeliveryCreate({
     instituteMapping,
     isLoading,
   } = useInstituteMapping();
+
   const [name, setName] = useState(t("fetch_page_default_name"));
-  const [supplier, setSupplier] = useState(defaultSupplier?.supplier_id || "");
+  const [supplier, setSupplier] = useState("");
   const [note, setNote] = useState("");
   const [inwardDate, setInwardDate] = useState(getTodayFormatted());
   const returnPath = `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`;
+
+  useEffect(() => {
+    if (defaultSupplier) {
+      setSupplier(defaultSupplier.supplier_id);
+    }
+  }, [defaultSupplier]);
 
   // Initiate inward fetch API
   const { mutateAsync: initiateInwardFetch } = useMutation({
@@ -114,7 +121,7 @@ export default function EAusdhadhiDeliveryCreate({
   // Prepare supplier options
   const supplierOptions = supplierMappings.map((mapping) => ({
     id: mapping.supplier_id,
-    name: `${mapping.supplier_name} (${mapping.eaushadhi_warehouse_name})`,
+    name: `${mapping.supplier_name}`,
   }));
 
   // Loading state
