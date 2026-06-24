@@ -321,7 +321,7 @@ function CreateProductKnowledgeDialog({
   // Prefill or reset form when dialog opens/closes
   useEffect(() => {
     if (open) {
-      const displayName = suggestedName || eaushadhiDrugName;
+      const displayName = eaushadhiDrugName;
       setName(displayName);
       setSlugValue(toSlug(displayName, 25));
       setCategorySlug("");
@@ -763,7 +763,8 @@ function DeliveryRow({
             suggestedName={row.product_knowledge_name}
           />
           {row.eaushadhi_drug_name && (
-            <span className="text-xs text-gray-500 truncate">
+            // AFTER
+            <span className="text-xs text-gray-500 break-words">
               {t("supply_form_eaushadhi_prefix")} {row.eaushadhi_drug_name}
             </span>
           )}
@@ -1275,10 +1276,9 @@ export default function AddSupplyDeliveryForm({
           // Fallback: show first failed result's status code
           const firstFailed = err.failed?.[0];
           toast.error(
-            `Failed: ${
-              (firstFailed?.data as any)?.detail ??
-              firstFailed?.status_code ??
-              t("supply_form_unexpected_error")
+            `Failed: ${(firstFailed?.data as any)?.detail ??
+            firstFailed?.status_code ??
+            t("supply_form_unexpected_error")
             }`,
           );
         }
