@@ -105,7 +105,7 @@ function extractErrorDetailsFromSuperBatch(
 }
 
 
-function formatErrorMessage(errors: ErrorDetail[]): string {
+function formatErrorMessage(errors: ErrorDetail[], t: (key: string) => string): string {
   if (errors.length === 0) return t("supply_form_unexpected_error");
 
   const byRef = new Map<string, ErrorDetail[]>();
@@ -638,22 +638,6 @@ function ProductMappingSelector({
               <p className="text-xs text-gray-500">
                 {t("supply_form_no_products_found")}
               </p>
-              {canCreate && (
-                <Button
-                  variant="primary"
-                  size="default"
-                  type="button"
-                  className="mt-4"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setIsOpen(false);
-                    setCreateDialogOpen(true);
-                  }}
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  {t("supply_form_create_product_knowledge")}
-                </Button>
-              )}
             </div>
           )}
           {!isSearching &&
@@ -666,6 +650,24 @@ function ProductMappingSelector({
                 {mapping.product_knowledge.name}
               </SelectItem>
             ))}
+          {!isSearching && canCreate && (
+            <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
+              <Button
+                variant="primary"
+                size="default"
+                type="button"
+                className="w-full"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setIsOpen(false);
+                  setCreateDialogOpen(true);
+                }}
+              >
+                <PlusIcon className="h-4 w-4" />
+                {t("supply_form_create_product_knowledge")}
+              </Button>
+            </div>
+          )}
         </SelectContent>
       </Select>
 
@@ -1266,7 +1268,7 @@ export default function AddSupplyDeliveryForm({
 
         if (errorDetails.length > 0) {
           // Show detailed error message with field names
-          const errorMessage = formatErrorMessage(errorDetails);
+          const errorMessage = formatErrorMessage(errorDetails, t);
           toast.error(errorMessage);
         } else {
           // Fallback: show first failed result's status code
