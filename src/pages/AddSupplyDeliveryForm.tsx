@@ -551,6 +551,7 @@ function ProductMappingSelector({
   suggestedName?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
+  const { meta } = useInstituteMapping();
   const [isOpen, setIsOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
   const [canCreate, setCanCreate] = useState<boolean>(false);
@@ -650,7 +651,7 @@ function ProductMappingSelector({
                 {mapping.product_knowledge.name}
               </SelectItem>
             ))}
-          {!isSearching && canCreate && (
+          {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
             <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
               <Button
                 variant="primary"

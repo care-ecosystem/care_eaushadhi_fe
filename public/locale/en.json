@@ -173,6 +173,8 @@
   "drawer_disable_inward_date_hint": "Lock the inward date to today — users won't be able to backdate fetches.",
   "drawer_manual_addition_label": "Allow Manual Addition",
   "drawer_manual_addition_hint": "Let users add items not present in the eAushadhi inward response.",
+  "drawer_allow_creating_product_knowledge_label": "Allow Creating Product Knowledge",
+  "drawer_allow_creating_product_knowledge_hint": "Let users create new product knowledges",
   "drawer_allow_deleting_inward_label": "Allow Deleting Inward After Fetch",
   "drawer_allow_deleting_inward_hint": "Let users delete inward records after they have been fetched from eAushadhi.",
   "drawer_allow_updating_quantity_label": "Allow Updating Quantity After Received",

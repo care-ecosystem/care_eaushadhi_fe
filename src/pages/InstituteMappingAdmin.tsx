@@ -42,6 +42,7 @@ interface InstituteMapping {
     manual_addition: boolean;
     allow_deleting_inward_after_fetch: boolean;
     allow_updating_quantity_after_received: boolean;
+    allow_creating_product_knowledge: boolean;
   };
   supplier_mappings: SupplierMapping[];
 }
@@ -166,6 +167,10 @@ export default function InstituteMappingAdmin() {
     allowUpdatingQuantityAfterReceived,
     setAllowUpdatingQuantityAfterReceived,
   ] = useState(false);
+  const [
+    allowCreatingProductKnowledge,
+    setAllowCreatingProductKnowledge,
+  ] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["institute-mappings-admin"],
@@ -214,6 +219,7 @@ export default function InstituteMappingAdmin() {
             allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
             allow_updating_quantity_after_received:
               allowUpdatingQuantityAfterReceived,
+            allow_creating_product_knowledge: allowCreatingProductKnowledge,
           },
         },
       ),
@@ -267,6 +273,7 @@ export default function InstituteMappingAdmin() {
           allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
           allow_updating_quantity_after_received:
             allowUpdatingQuantityAfterReceived,
+          allow_creating_product_knowledge: allowCreatingProductKnowledge,
         },
       }),
     onSuccess: async (response: any) => {
@@ -322,6 +329,9 @@ export default function InstituteMappingAdmin() {
     setAllowUpdatingQuantityAfterReceived(
       m.meta?.allow_updating_quantity_after_received ?? false,
     );
+    setAllowCreatingProductKnowledge(
+      m.meta?.allow_creating_product_knowledge ?? false,
+    );
     setSupplierRows(m.supplier_mappings);
     setNewSupplierRows([]);
   };
@@ -363,6 +373,7 @@ export default function InstituteMappingAdmin() {
                 manual_addition: false,
                 allow_deleting_inward_after_fetch: false,
                 allow_updating_quantity_after_received: false,
+                allow_creating_product_knowledge: false,
               },
               supplier_mappings: [],
             });
@@ -374,6 +385,7 @@ export default function InstituteMappingAdmin() {
             setManualAddition(false);
             setAllowDeletingInwardAfterFetch(false);
             setAllowUpdatingQuantityAfterReceived(false);
+            setAllowCreatingProductKnowledge(false);
             setSupplierRows([]);
             setNewSupplierRows([]);
           }}
@@ -981,6 +993,27 @@ export default function InstituteMappingAdmin() {
                       id="allow-updating-quantity"
                       checked={allowUpdatingQuantityAfterReceived}
                       onCheckedChange={setAllowUpdatingQuantityAfterReceived}
+                    />
+                  </Field>
+                  <Field
+                    orientation="horizontal"
+                    className="justify-between items-start"
+                  >
+                    <div className="flex-1">
+                      <FieldLabel
+                        htmlFor="allow-creating-product-knowledge"
+                        className="text-sm font-medium text-gray-900"
+                      >
+                        {t("drawer_allow_creating_product_knowledge_label")}
+                      </FieldLabel>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {t("drawer_allow_creating_product_knowledge_hint")}
+                      </p>
+                    </div>
+                    <Switch
+                      id="allow-creating-product-knowledge"
+                      checked={allowCreatingProductKnowledge}
+                      onCheckedChange={setAllowCreatingProductKnowledge}
                     />
                   </Field>
                 </div>

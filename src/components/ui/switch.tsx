@@ -24,10 +24,10 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         {...props}
       >
         <span
-          className={cn(
-            "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform",
-            checked ? "translate-x-4" : "translate-x-0"
-          )}
+          className="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform"
+          style={{
+            transform: checked ? "translateX(20px)" : "translateX(0px)",
+          }}
         />
       </button>
     )
