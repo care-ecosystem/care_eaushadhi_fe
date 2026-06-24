@@ -221,7 +221,7 @@ export default function InstituteMappingAdmin() {
     if (!pluginConfig) return false;
     const value = pluginConfig[fieldKey as keyof PluginConfig];
     return (
-      typeof value === "string" && value.trim().toLowerCase() === "enable"
+      typeof value === "string" && value.trim().toLowerCase() === "true"
     );
   };
 
