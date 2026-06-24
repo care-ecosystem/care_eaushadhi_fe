@@ -1,11 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  eaushadhiApi,
-  type InstituteMapping,
-  type SupplierMapping,
-  type CreateInstitutePayload,
-  type UpdateInstitutePayload,
-} from "@/apis/index";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import { Button } from "@/components/ui/button";
@@ -20,24 +13,16 @@ import { I18NNAMESPACE } from "@/lib/contants";
 import { PLUGIN_SLUG } from "@/lib/contants";
 import { PlugConfigMeta } from "@/types/plugin";
 
-// ─── Constants ─────────────────────────────────────────────────────────────
-
+// Constants
 const SCHEMA_VERSIONS = ["1.0"];
 const DEFAULT_CREDENTIALS_REF = "EAUSHADHI_API_SECRET_KEY";
 
-// ─── UI Types ─────────────────────────────────────────────────────────────
-
-interface SelectOption {
+interface SupplierMapping {
   id: string;
-  name: string;
-}
-
-interface SupplierSelectProps {
-  options: SelectOption[];
-  value: string;
-  onChange: (id: string, name: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
+  supplier_id: string;
+  supplier_name: string;
+  eaushadhi_warehouse_name: string;
+  is_default: boolean;
 }
 
 interface NewSupplierRow {
@@ -48,8 +33,6 @@ interface NewSupplierRow {
   is_default: boolean;
 }
 
-<<<<<<< HEAD
-=======
 interface InstituteMapping {
   id: string;
   facility_id: string;
@@ -66,7 +49,6 @@ interface InstituteMapping {
   supplier_mappings: SupplierMapping[];
 }
 
->>>>>>> main
 interface Facility {
   id: string;
   name: string;
@@ -78,7 +60,6 @@ interface Organization {
 }
 
 // ─── Helper Function to Get Plugin Config ──────────────────────────────────
-
 /**
  * Get plugin configuration from window.__CARE_PLUGIN_RUNTIME__.meta
  * This is the runtime configuration set by the CARE platform
@@ -98,7 +79,18 @@ function getPluginConfig(): PlugConfigMeta | null {
   }
 }
 
-// ─── SupplierSelect Component ──────────────────────────────────────────────
+// ─── Reusable SupplierSelect ───────────────────────────────────────────────
+interface SelectOption {
+  id: string;
+  name: string;
+}
+interface SupplierSelectProps {
+  options: SelectOption[];
+  value: string;
+  onChange: (id: string, name: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}
 
 function SupplierSelect({
   options,
@@ -178,15 +170,16 @@ function SupplierSelect({
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────
-
 export default function InstituteMappingAdmin() {
   const queryClient = useQueryClient();
   const { t } = useTranslation(I18NNAMESPACE);
 
-  // State
+  // Plugin config state
+  const [pluginConfig, setPluginConfig] = useState<PlugConfigMeta | null>(null);
+
+  // Mapping and data state
   const [selectedMapping, setSelectedMapping] =
     useState<InstituteMapping | null>(null);
-  const [pluginConfig, setPluginConfig] = useState<PlugConfigMeta | null>(null);
   const [supplierRows, setSupplierRows] = useState<SupplierMapping[]>([]);
   const [newSupplierRows, setNewSupplierRows] = useState<NewSupplierRow[]>([]);
 
@@ -203,20 +196,16 @@ export default function InstituteMappingAdmin() {
     allowUpdatingQuantityAfterReceived,
     setAllowUpdatingQuantityAfterReceived,
   ] = useState(false);
-<<<<<<< HEAD
-  const [
-    allowCreatingProductKnowledge,
-    setAllowCreatingProductKnowledge,
-  ] = useState(false);
+  const [allowCreatingProductKnowledge, setAllowCreatingProductKnowledge] =
+    useState(false);
 
-  // Load plugin config on mount (from window.__CARE_PLUGIN_RUNTIME__)
+  // Load plugin config on mount
   useEffect(() => {
     const config = getPluginConfig();
     setPluginConfig(config);
   }, []);
 
   // ─── Helpers ───────────────────────────────────────────────────────────
-
   /**
    * Check if a field is enabled in plugin config
    */
@@ -224,41 +213,14 @@ export default function InstituteMappingAdmin() {
     return pluginConfig?.config?.[fieldKey as keyof typeof pluginConfig.config] === true;
   };
 
-  /**
-   * Get localized label for a field
-   */
-  const getFieldLabel = (fieldKey: string): string => {
-    const labels: Record<string, string> = {
-      schema_version: t("drawer_schema_version_label"),
-      credentials_ref: t("drawer_credentials_ref_label"),
-      disable_inward_date: t("drawer_disable_inward_date_label"),
-      manual_addition: t("drawer_manual_addition_label"),
-      allow_deleting_inward_after_fetch: t(
-        "drawer_allow_deleting_inward_label"
-      ),
-      allow_updating_quantity_after_received: t(
-        "drawer_allow_updating_quantity_label"
-      ),
-    };
-    return labels[fieldKey] || "";
-  };
-
-  /**
-   * Settings section is always visible (for allow_creating_product_knowledge)
-   */
-  const settingsVisible = (): boolean => {
-    return true;
-  };
-
   // ─── Queries ───────────────────────────────────────────────────────────
-=======
-  const [allowCreatingProductKnowledge, setAllowCreatingProductKnowledge] =
-    useState(false);
->>>>>>> main
-
   const { data, isLoading } = useQuery({
-    queryKey: ["institute-mappings"],
-    queryFn: () => eaushadhiApi.getInstituteMappings(),
+    queryKey: ["institute-mappings-admin"],
+    queryFn: () =>
+      request<{ results: InstituteMapping[] }>(
+        `/api/care_eaushadhi/institute-mappings/`,
+        HttpMethod.GET,
+      ),
   });
 
   const { data: facilitiesData } = useQuery({
@@ -267,7 +229,7 @@ export default function InstituteMappingAdmin() {
       request<{ results: Facility[] }>(
         `/api/v1/getallfacilities/`,
         HttpMethod.GET,
-        { limit: 100 }
+        { limit: 100 },
       ),
   });
 
@@ -277,7 +239,7 @@ export default function InstituteMappingAdmin() {
       request<{ results: Organization[] }>(
         `/api/v1/organization/`,
         HttpMethod.GET,
-        { org_type: "product_supplier", limit: 100 }
+        { org_type: "product_supplier", limit: 100 },
       ),
   });
 
@@ -286,22 +248,7 @@ export default function InstituteMappingAdmin() {
   const mappings = data?.results ?? [];
 
   // ─── Mutations ─────────────────────────────────────────────────────────
-
   const { mutate: saveMapping, isPending: isSaving } = useMutation({
-<<<<<<< HEAD
-    mutationFn: async () => {
-      if (!selectedMapping?.id) throw new Error("No mapping ID");
-
-      const payload = {
-        schema_version: schemaVersion || SCHEMA_VERSIONS[0],
-        credentials_ref: credentialsRef || DEFAULT_CREDENTIALS_REF,
-        meta: {
-          disable_inward_date: disableInwardDate,
-          manual_addition: manualAddition,
-          allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
-          allow_updating_quantity_after_received: allowUpdatingQuantityAfterReceived,
-          allow_creating_product_knowledge: allowCreatingProductKnowledge,
-=======
     mutationFn: () =>
       request(
         `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/`,
@@ -317,12 +264,8 @@ export default function InstituteMappingAdmin() {
               allowUpdatingQuantityAfterReceived,
             allow_creating_product_knowledge: allowCreatingProductKnowledge,
           },
->>>>>>> main
         },
-      };
-
-      await eaushadhiApi.updateInstituteMapping(selectedMapping.id, payload);
-    },
+      ),
     onSuccess: async () => {
       try {
         const combinedSupplierMappings = [
@@ -341,63 +284,53 @@ export default function InstituteMappingAdmin() {
             })),
         ];
 
-        await eaushadhiApi.updateSupplierMappings(selectedMapping!.id, {
-          supplier_mappings: combinedSupplierMappings,
-        });
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
 
         toast.success(t("drawer_mapping_updated"));
-<<<<<<< HEAD
-        queryClient.invalidateQueries({ queryKey: ["institute-mappings"] });
-=======
         queryClient.invalidateQueries({
           queryKey: ["institute-mappings-admin"],
         });
->>>>>>> main
         setSelectedMapping(null);
       } catch (error) {
         console.error("Error updating supplier mappings:", error);
         toast.error(
           t("drawer_supplier_mapping_update_error") ||
-<<<<<<< HEAD
-            "Failed to update supplier mappings"
-        );
-        throw error;
-=======
             "Failed to update supplier mappings",
         );
->>>>>>> main
       }
     },
     onError: () => toast.error(t("drawer_mapping_update_error")),
   });
 
   const { mutate: createMapping, isPending: isCreating } = useMutation({
-    mutationFn: async () => {
-      const payload = {
+    mutationFn: () =>
+      request(`/api/care_eaushadhi/institute-mappings/`, HttpMethod.POST, {
         facility_id: facilityId,
         eaushadhi_institute_id: instituteId,
-        schema_version: schemaVersion || SCHEMA_VERSIONS[0],
-        credentials_ref: credentialsRef || DEFAULT_CREDENTIALS_REF,
+        schema_version: schemaVersion,
+        credentials_ref: credentialsRef,
         meta: {
           disable_inward_date: disableInwardDate,
           manual_addition: manualAddition,
           allow_deleting_inward_after_fetch: allowDeletingInwardAfterFetch,
-<<<<<<< HEAD
-          allow_updating_quantity_after_received: allowUpdatingQuantityAfterReceived,
-=======
           allow_updating_quantity_after_received:
             allowUpdatingQuantityAfterReceived,
->>>>>>> main
           allow_creating_product_knowledge: allowCreatingProductKnowledge,
         },
-      };
-
-      return eaushadhiApi.createInstituteMapping(payload);
-    },
-    onSuccess: async (response) => {
+      }),
+    onSuccess: async (response: any) => {
       try {
-        const newMappingId = response?.id;
-        if (!newMappingId) throw new Error("No mapping ID returned from create");
+        const newMappingId = response?.id || response?.external_id;
+
+        if (!newMappingId) {
+          throw new Error("No mapping ID returned from create");
+        }
 
         const combinedSupplierMappings = [
           ...newSupplierRows
@@ -409,37 +342,31 @@ export default function InstituteMappingAdmin() {
             })),
         ];
 
-        await eaushadhiApi.updateSupplierMappings(newMappingId, {
-          supplier_mappings: combinedSupplierMappings,
-        });
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
 
         toast.success(t("drawer_mapping_created"));
-<<<<<<< HEAD
-        queryClient.invalidateQueries({ queryKey: ["institute-mappings"] });
-=======
         queryClient.invalidateQueries({
           queryKey: ["institute-mappings-admin"],
         });
->>>>>>> main
         setSelectedMapping(null);
       } catch (error) {
         console.error("Error adding supplier mappings to new mapping:", error);
         toast.error(
           t("drawer_supplier_mapping_update_error") ||
-<<<<<<< HEAD
-            "Failed to add supplier mappings"
-=======
             "Failed to add supplier mappings",
->>>>>>> main
         );
-        throw error;
       }
     },
     onError: () => toast.error(t("drawer_mapping_create_error")),
   });
 
   // ─── Event Handlers ────────────────────────────────────────────────────
-
   const openDrawer = (m: InstituteMapping) => {
     setSelectedMapping(m);
     setFacilityId(m.facility_id);
@@ -449,47 +376,15 @@ export default function InstituteMappingAdmin() {
     setDisableInwardDate(m.meta?.disable_inward_date ?? false);
     setManualAddition(m.meta?.manual_addition ?? false);
     setAllowDeletingInwardAfterFetch(
-      m.meta?.allow_deleting_inward_after_fetch ?? false
+      m.meta?.allow_deleting_inward_after_fetch ?? false,
     );
     setAllowUpdatingQuantityAfterReceived(
-      m.meta?.allow_updating_quantity_after_received ?? false
-    );
-    setAllowCreatingProductKnowledge(
-      m.meta?.allow_creating_product_knowledge ?? false
+      m.meta?.allow_updating_quantity_after_received ?? false,
     );
     setAllowCreatingProductKnowledge(
       m.meta?.allow_creating_product_knowledge ?? false,
     );
     setSupplierRows(m.supplier_mappings);
-    setNewSupplierRows([]);
-  };
-
-  const openCreateDrawer = () => {
-    setSelectedMapping({
-      id: "",
-      facility_id: "",
-      eaushadhi_institute_id: "",
-      schema_version: SCHEMA_VERSIONS[0],
-      credentials_ref: DEFAULT_CREDENTIALS_REF,
-      meta: {
-        disable_inward_date: false,
-        manual_addition: false,
-        allow_deleting_inward_after_fetch: false,
-        allow_updating_quantity_after_received: false,
-        allow_creating_product_knowledge: false,
-      },
-      supplier_mappings: [],
-    });
-    setFacilityId("");
-    setInstituteId("");
-    setSchemaVersion(SCHEMA_VERSIONS[0]);
-    setCredentialsRef(DEFAULT_CREDENTIALS_REF);
-    setDisableInwardDate(false);
-    setManualAddition(false);
-    setAllowDeletingInwardAfterFetch(false);
-    setAllowUpdatingQuantityAfterReceived(false);
-    setAllowCreatingProductKnowledge(false);
-    setSupplierRows([]);
     setNewSupplierRows([]);
   };
 
@@ -507,7 +402,6 @@ export default function InstituteMappingAdmin() {
   };
 
   // ─── Render ────────────────────────────────────────────────────────────
-
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6">
       {/* Header */}
@@ -520,9 +414,6 @@ export default function InstituteMappingAdmin() {
         </div>
         <Button
           className="flex items-center gap-2"
-<<<<<<< HEAD
-          onClick={openCreateDrawer}
-=======
           onClick={() => {
             setSelectedMapping({
               id: "",
@@ -551,7 +442,6 @@ export default function InstituteMappingAdmin() {
             setSupplierRows([]);
             setNewSupplierRows([]);
           }}
->>>>>>> main
         >
           <PlusCircle className="size-4" /> {t("admin_add_mapping")}
         </Button>
@@ -612,7 +502,7 @@ export default function InstituteMappingAdmin() {
             ) : (
               mappings.map((m) => {
                 const defaultSupplier = m.supplier_mappings.find(
-                  (s) => s.is_default
+                  (s) => s.is_default,
                 );
                 const facilityName =
                   facilities.find((f) => f.id === m.facility_id)?.name ??
@@ -709,7 +599,6 @@ export default function InstituteMappingAdmin() {
                       {t("drawer_facility_hint")}
                     </p>
                   </div>
-
                   <div>
                     <label className="text-sm font-medium text-gray-900 mb-1 block">
                       {t("drawer_institute_id_label")}{" "}
@@ -725,10 +614,11 @@ export default function InstituteMappingAdmin() {
                     </p>
                   </div>
 
+                  {/* Conditional: Schema Version */}
                   {fieldEnabled("schema_version") && (
                     <div>
                       <label className="text-sm font-medium text-gray-900 mb-1 block">
-                        {getFieldLabel("schema_version")}
+                        {t("drawer_schema_version_label")}
                       </label>
                       <SupplierSelect
                         options={SCHEMA_VERSIONS.map((v) => ({
@@ -745,10 +635,11 @@ export default function InstituteMappingAdmin() {
                     </div>
                   )}
 
+                  {/* Conditional: Credentials Ref */}
                   {fieldEnabled("credentials_ref") && (
                     <div>
                       <label className="text-sm font-medium text-gray-900 mb-1 block">
-                        {getFieldLabel("credentials_ref")}{" "}
+                        {t("drawer_credentials_ref_label")}{" "}
                         <span className="text-red-500">*</span>
                       </label>
                       <Input
@@ -794,55 +685,6 @@ export default function InstituteMappingAdmin() {
                           <label className="text-xs font-medium text-gray-600">
                             {t("drawer_col_supplier")}
                           </label>
-<<<<<<< HEAD
-                          <SupplierSelect
-                            options={suppliers.map((sup) => ({
-                              id: sup.id,
-                              name: sup.name,
-                            }))}
-                            value={s.supplier_id}
-                            onChange={(id, name) => {
-                              setSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        supplier_id: id,
-                                        supplier_name: name,
-                                        eaushadhi_warehouse_name:
-                                          r.eaushadhi_warehouse_name || name,
-                                      }
-                                    : r
-                                )
-                              );
-                            }}
-                            placeholder={t("drawer_supplier_placeholder")}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-gray-600">
-                            {t("drawer_col_warehouse")}
-                          </label>
-                          <Input
-                            value={s.eaushadhi_warehouse_name}
-                            onChange={(e) =>
-                              setSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        eaushadhi_warehouse_name:
-                                          e.target.value,
-                                      }
-                                    : r
-                                )
-                              )
-                            }
-                            placeholder={t("drawer_warehouse_placeholder")}
-                            className="h-9 text-sm"
-                          />
-=======
->>>>>>> main
                           <div className="flex items-center gap-2">
                             <div className="flex-1">
                               <SupplierSelect
@@ -874,21 +716,7 @@ export default function InstituteMappingAdmin() {
                               type="button"
                               onClick={() =>
                                 setSupplierRows((rows) =>
-<<<<<<< HEAD
-                                  rows.map((r, i) =>
-                                    i === idx
-                                      ? {
-                                          ...r,
-                                          eaushadhi_warehouse_name: e.target
-                                            .checked
-                                            ? r.supplier_name
-                                            : "",
-                                        }
-                                      : r
-                                  )
-=======
                                   rows.filter((r) => r.id !== s.id),
->>>>>>> main
                                 )
                               }
                               className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
@@ -910,7 +738,7 @@ export default function InstituteMappingAdmin() {
                                   rows.map((r) => ({
                                     ...r,
                                     is_default: r.id === s.id,
-                                  }))
+                                  })),
                                 );
                                 setNewSupplierRows((rows) =>
                                   rows.map((r) => ({
@@ -923,8 +751,8 @@ export default function InstituteMappingAdmin() {
                                   rows.map((r) =>
                                     r.id === s.id
                                       ? { ...r, is_default: false }
-                                      : r
-                                  )
+                                      : r,
+                                  ),
                                 );
                               }
                             }}
@@ -936,33 +764,10 @@ export default function InstituteMappingAdmin() {
                             {t("drawer_make_default")}
                           </FieldLabel>
                         </Field>
-<<<<<<< HEAD
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSupplierRows((rows) =>
-                              rows.filter((r) => r.id !== s.id)
-                            )
-                          }
-                          className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-=======
->>>>>>> main
                       </div>
                     );
                   })}
 
-<<<<<<< HEAD
-                  {/* New rows */}
-                  {newSupplierRows.map((s, idx) => (
-                    <div
-                      key={s.tempId}
-                      className="border border-gray-200 rounded-lg p-3 space-y-3"
-                    >
-                      <div className="grid grid-cols-2 gap-3 items-start">
-=======
                   {newSupplierRows.map((s, idx) => {
                     const usedIds = new Set([
                       ...supplierRows.map((r) => r.supplier_id),
@@ -975,60 +780,10 @@ export default function InstituteMappingAdmin() {
                         key={s.tempId}
                         className="border border-gray-200 rounded-lg p-3 space-y-3"
                       >
->>>>>>> main
                         <div className="space-y-2">
                           <label className="text-xs font-medium text-gray-600">
                             {t("drawer_col_supplier")}
                           </label>
-<<<<<<< HEAD
-                          <SupplierSelect
-                            options={suppliers.map((sup) => ({
-                              id: sup.id,
-                              name: sup.name,
-                            }))}
-                            value={s.supplier_id}
-                            onChange={(id, name) => {
-                              setNewSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        supplier_id: id,
-                                        supplier_name: name,
-                                        eaushadhi_warehouse_name:
-                                          r.eaushadhi_warehouse_name || name,
-                                      }
-                                    : r
-                                )
-                              );
-                            }}
-                            placeholder={t("drawer_supplier_placeholder")}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-gray-600">
-                            {t("drawer_col_warehouse")}
-                          </label>
-                          <Input
-                            value={s.eaushadhi_warehouse_name}
-                            onChange={(e) =>
-                              setNewSupplierRows((rows) =>
-                                rows.map((r, i) =>
-                                  i === idx
-                                    ? {
-                                        ...r,
-                                        eaushadhi_warehouse_name:
-                                          e.target.value,
-                                      }
-                                    : r
-                                )
-                              )
-                            }
-                            placeholder={t("drawer_warehouse_placeholder")}
-                            className="h-9 text-sm"
-                          />
-=======
->>>>>>> main
                           <div className="flex items-center gap-2">
                             <div className="flex-1">
                               <SupplierSelect
@@ -1060,21 +815,7 @@ export default function InstituteMappingAdmin() {
                               type="button"
                               onClick={() =>
                                 setNewSupplierRows((rows) =>
-<<<<<<< HEAD
-                                  rows.map((r, i) =>
-                                    i === idx
-                                      ? {
-                                          ...r,
-                                          eaushadhi_warehouse_name: e.target
-                                            .checked
-                                            ? r.supplier_name
-                                            : "",
-                                        }
-                                      : r
-                                  )
-=======
                                   rows.filter((_, i) => i !== idx),
->>>>>>> main
                                 )
                               }
                               className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
@@ -1096,7 +837,7 @@ export default function InstituteMappingAdmin() {
                                   rows.map((r, i) => ({
                                     ...r,
                                     is_default: i === idx,
-                                  }))
+                                  })),
                                 );
                                 setSupplierRows((rows) =>
                                   rows.map((r) => ({
@@ -1107,8 +848,8 @@ export default function InstituteMappingAdmin() {
                               } else {
                                 setNewSupplierRows((rows) =>
                                   rows.map((r, i) =>
-                                    i === idx ? { ...r, is_default: false } : r
-                                  )
+                                    i === idx ? { ...r, is_default: false } : r,
+                                  ),
                                 );
                               }
                             }}
@@ -1120,20 +861,6 @@ export default function InstituteMappingAdmin() {
                             {t("drawer_make_default")}
                           </FieldLabel>
                         </Field>
-<<<<<<< HEAD
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setNewSupplierRows((rows) =>
-                              rows.filter((_, i) => i !== idx)
-                            )
-                          }
-                          className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-=======
->>>>>>> main
                       </div>
                     );
                   })}
@@ -1146,15 +873,6 @@ export default function InstituteMappingAdmin() {
                     )}
                 </div>
 
-<<<<<<< HEAD
-                <button
-                  type="button"
-                  onClick={addNewSupplierRow}
-                  className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
-                >
-                  <span className="text-base">+</span> {t("drawer_add_supplier")}
-                </button>
-=======
                 {/* Add another supplier */}
                 {suppliers.length >
                   supplierRows.length + newSupplierRows.length && (
@@ -1167,164 +885,120 @@ export default function InstituteMappingAdmin() {
                     {t("drawer_add_supplier")}
                   </button>
                 )}
->>>>>>> main
               </div>
 
               <hr className="border-gray-200" />
 
-              {/* Settings Section */}
-              {settingsVisible() && (
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900 mb-1">
-                    {t("drawer_settings_title")}
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {t("drawer_settings_subtitle")}
-                  </p>
-                  <div className="space-y-5">
-                    {fieldEnabled("disable_inward_date") && (
-                      <Field
-                        orientation="horizontal"
-                        className="justify-between items-start"
-                      >
-                        <div className="flex-1">
-                          <FieldLabel
-                            htmlFor="disable-inward-date"
-                            className="text-sm font-medium text-gray-900"
-                          >
-                            {getFieldLabel("disable_inward_date")}
-                          </FieldLabel>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {t("drawer_disable_inward_date_hint")}
-                          </p>
-                        </div>
-                        <Switch
-                          id="disable-inward-date"
-                          checked={disableInwardDate}
-                          onCheckedChange={setDisableInwardDate}
-                        />
-                      </Field>
-                    )}
-
-                    {fieldEnabled("manual_addition") && (
-                      <Field
-                        orientation="horizontal"
-                        className="justify-between items-start"
-                      >
-                        <div className="flex-1">
-                          <FieldLabel
-                            htmlFor="manual-addition"
-                            className="text-sm font-medium text-gray-900"
-                          >
-                            {getFieldLabel("manual_addition")}
-                          </FieldLabel>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {t("drawer_manual_addition_hint")}
-                          </p>
-                        </div>
-                        <Switch
-                          id="manual-addition"
-                          checked={manualAddition}
-                          onCheckedChange={setManualAddition}
-                        />
-                      </Field>
-                    )}
-
-                    {fieldEnabled("allow_deleting_inward_after_fetch") && (
-                      <Field
-                        orientation="horizontal"
-                        className="justify-between items-start"
-                      >
-                        <div className="flex-1">
-                          <FieldLabel
-                            htmlFor="allow-deleting-inward"
-                            className="text-sm font-medium text-gray-900"
-                          >
-                            {getFieldLabel(
-                              "allow_deleting_inward_after_fetch"
-                            )}
-                          </FieldLabel>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {t("drawer_allow_deleting_inward_hint")}
-                          </p>
-                        </div>
-                        <Switch
-                          id="allow-deleting-inward"
-                          checked={allowDeletingInwardAfterFetch}
-                          onCheckedChange={
-                            setAllowDeletingInwardAfterFetch
-                          }
-                        />
-                      </Field>
-                    )}
-
-                    {fieldEnabled(
-                      "allow_updating_quantity_after_received"
-                    ) && (
-                      <Field
-                        orientation="horizontal"
-                        className="justify-between items-start"
-                      >
-<<<<<<< HEAD
-                        <div className="flex-1">
-                          <FieldLabel
-                            htmlFor="allow-updating-quantity"
-                            className="text-sm font-medium text-gray-900"
-                          >
-                            {getFieldLabel(
-                              "allow_updating_quantity_after_received"
-                            )}
-                          </FieldLabel>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {t("drawer_allow_updating_quantity_hint")}
-                          </p>
-                        </div>
-                        <Switch
-                          id="allow-updating-quantity"
-                          checked={allowUpdatingQuantityAfterReceived}
-                          onCheckedChange={
-                            setAllowUpdatingQuantityAfterReceived
-                          }
-                        />
-                      </Field>
-                    )}
-
-                    {/* NEW: Always show allow_creating_product_knowledge */}
+              {/* Settings */}
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-1">
+                  {t("drawer_settings_title")}
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  {t("drawer_settings_subtitle")}
+                </p>
+                <div className="space-y-5">
+                  {/* Conditional: Disable Inward Date */}
+                  {fieldEnabled("disable_inward_date") && (
                     <Field
                       orientation="horizontal"
                       className="justify-between items-start"
                     >
                       <div className="flex-1">
                         <FieldLabel
-                          htmlFor="allow-creating-product-knowledge"
+                          htmlFor="disable-inward-date"
                           className="text-sm font-medium text-gray-900"
                         >
-                          {t("drawer_allow_creating_product_knowledge_label")}
+                          {t("drawer_disable_inward_date_label")}
                         </FieldLabel>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {t("drawer_allow_creating_product_knowledge_hint")}
+                          {t("drawer_disable_inward_date_hint")}
                         </p>
                       </div>
                       <Switch
-                        id="allow-creating-product-knowledge"
-                        checked={allowCreatingProductKnowledge}
-                        onCheckedChange={setAllowCreatingProductKnowledge}
+                        id="disable-inward-date"
+                        checked={disableInwardDate}
+                        onCheckedChange={setDisableInwardDate}
                       />
                     </Field>
-                  </div>
-=======
-                        {t("drawer_allow_updating_quantity_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_allow_updating_quantity_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="allow-updating-quantity"
-                      checked={allowUpdatingQuantityAfterReceived}
-                      onCheckedChange={setAllowUpdatingQuantityAfterReceived}
-                    />
-                  </Field>
+                  )}
+
+                  {/* Conditional: Manual Addition */}
+                  {fieldEnabled("manual_addition") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="manual-addition"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_manual_addition_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_manual_addition_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="manual-addition"
+                        checked={manualAddition}
+                        onCheckedChange={setManualAddition}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Conditional: Allow Deleting Inward After Fetch */}
+                  {fieldEnabled("allow_deleting_inward_after_fetch") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-deleting-inward"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_allow_deleting_inward_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_deleting_inward_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-deleting-inward"
+                        checked={allowDeletingInwardAfterFetch}
+                        onCheckedChange={setAllowDeletingInwardAfterFetch}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Conditional: Allow Updating Quantity After Received */}
+                  {fieldEnabled("allow_updating_quantity_after_received") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-updating-quantity"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_allow_updating_quantity_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_updating_quantity_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-updating-quantity"
+                        checked={allowUpdatingQuantityAfterReceived}
+                        onCheckedChange={setAllowUpdatingQuantityAfterReceived}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Always Visible: Allow Creating Product Knowledge */}
                   <Field
                     orientation="horizontal"
                     className="justify-between items-start"
@@ -1346,9 +1020,8 @@ export default function InstituteMappingAdmin() {
                       onCheckedChange={setAllowCreatingProductKnowledge}
                     />
                   </Field>
->>>>>>> main
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Footer */}
