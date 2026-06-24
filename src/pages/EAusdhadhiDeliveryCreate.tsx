@@ -65,7 +65,7 @@ export default function EAusdhadhiDeliveryCreate({
     if (defaultSupplier) {
       setSupplier(defaultSupplier.supplier_id);
     }
-  }, [defaultSupplier]);
+  }, [defaultSupplier?.supplier_id]);
 
   // Initiate inward fetch API
   const { mutateAsync: initiateInwardFetch } = useMutation({
