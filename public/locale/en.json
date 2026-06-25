@@ -189,6 +189,7 @@
   "drawer_facility_required": "Please select a facility",
   "drawer_institute_id_required": "Please enter eAushadhi Institute ID",
   "drawer_credentials_required": "Please enter credentials reference",
+  "drawer_at_least_one_supplier_required": "Please select a supplier",
   "supply_form_load_products_error": "Failed to load product options",
   "supply_form_no_drug_selected": "No drug selected",
   "supply_form_loading": "Loading...",
