@@ -559,15 +559,13 @@ export default function InstituteMappingAdmin() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      <span className="font-semibold">
-                        {m.supplier_mappings.length}
-                      </span>
+                      {m.supplier_mappings.length} &nbsp;
                       {m.supplier_mappings.length !== 1
                         ? t("admin_supplier_plural")
                         : t("admin_supplier_single")}
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      {defaultSupplier?.eaushadhi_warehouse_name ?? "—"}
+                      {defaultSupplier?.supplier_name ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <Button

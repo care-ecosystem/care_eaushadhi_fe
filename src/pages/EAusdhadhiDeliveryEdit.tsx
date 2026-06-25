@@ -75,10 +75,14 @@ export default function EAusdhadhiDeliveryEdit({
     }
   }, [existingOrder]);
 
-  const supplierOptions = supplierMappings.map((mapping) => ({
-    id: mapping.supplier_id,
-    name: mapping.supplier_name,
-  }));
+  const supplierOptions = Array.from(
+    new Map(
+      supplierMappings.map((mapping) => [
+        mapping.supplier_id,
+        { id: mapping.supplier_id, name: mapping.supplier_name },
+      ]),
+    ).values(),
+  );
 
   const { mutate: updateDeliveryOrder, isPending } = useMutation({
     mutationFn: () =>

@@ -119,10 +119,14 @@ export default function EAusdhadhiDeliveryCreate({
   });
 
   // Prepare supplier options
-  const supplierOptions = supplierMappings.map((mapping) => ({
-    id: mapping.supplier_id,
-    name: mapping.supplier_name,
-  }));
+  const supplierOptions = Array.from(
+    new Map(
+      supplierMappings.map((mapping) => [
+        mapping.supplier_id,
+        { id: mapping.supplier_id, name: mapping.supplier_name },
+      ]),
+    ).values(),
+  );
 
   // Loading state
   if (isLoading) {
