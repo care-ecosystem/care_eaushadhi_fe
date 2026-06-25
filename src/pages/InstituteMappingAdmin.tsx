@@ -285,11 +285,11 @@ export default function InstituteMappingAdmin() {
   const mappings = data?.results ?? [];
   const getAvailableFacilities = () => {
     const mappedFacilityIds = new Set(mappings.map((m) => m.facility_id));
-      return facilities.filter(
-        (facility) =>
-          !mappedFacilityIds.has(facility.id) || facility.id === facilityId,
-      );
-    };
+    return facilities.filter(
+      (facility) =>
+        !mappedFacilityIds.has(facility.id) || facility.id === facilityId,
+    );
+  };
 
 
 
@@ -316,16 +316,13 @@ export default function InstituteMappingAdmin() {
       try {
         const combinedSupplierMappings = getCombinedSupplierMappings();
 
-        // Only call supplier-mappings API if there are suppliers to save
-        if (combinedSupplierMappings.length > 0) {
-          await request(
-            `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
-            HttpMethod.PATCH,
-            {
-              supplier_mappings: combinedSupplierMappings,
-            },
-          );
-        }
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
 
         toast.success(t("drawer_mapping_updated"));
         queryClient.invalidateQueries({
@@ -336,7 +333,7 @@ export default function InstituteMappingAdmin() {
         console.error("Error updating supplier mappings:", error);
         toast.error(
           t("drawer_supplier_mapping_update_error") ||
-            "Failed to update supplier mappings",
+          "Failed to update supplier mappings",
         );
       }
     },
@@ -369,16 +366,16 @@ export default function InstituteMappingAdmin() {
 
         const combinedSupplierMappings = getCombinedSupplierMappings();
 
-        // Only call supplier-mappings API if there are suppliers to save
-        if (combinedSupplierMappings.length > 0) {
-          await request(
-            `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
-            HttpMethod.PATCH,
-            {
-              supplier_mappings: combinedSupplierMappings,
-            },
-          );
-        }
+        await request(
+          `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
+          HttpMethod.PATCH,
+          {
+            supplier_mappings: combinedSupplierMappings,
+          },
+        );
+
+        toast.success(t("drawer_mapping_created"));
+
 
         toast.success(t("drawer_mapping_created"));
         queryClient.invalidateQueries({
@@ -389,7 +386,7 @@ export default function InstituteMappingAdmin() {
         console.error("Error adding supplier mappings to new mapping:", error);
         toast.error(
           t("drawer_supplier_mapping_update_error") ||
-            "Failed to add supplier mappings",
+          "Failed to add supplier mappings",
         );
       }
     },
@@ -717,7 +714,7 @@ export default function InstituteMappingAdmin() {
                   {supplierRows.map((s, idx) => {
                     const totalSuppliers = supplierRows.length + newSupplierRows.length;
                     const canDelete = totalSuppliers > 1;
-                    
+
                     const usedIds = new Set([
                       ...supplierRows
                         .filter((_, i) => i !== idx)
@@ -748,11 +745,11 @@ export default function InstituteMappingAdmin() {
                                     rows.map((r, i) =>
                                       i === idx
                                         ? {
-                                            ...r,
-                                            supplier_id: id,
-                                            supplier_name: name,
-                                            eaushadhi_warehouse_name: name,
-                                          }
+                                          ...r,
+                                          supplier_id: id,
+                                          supplier_name: name,
+                                          eaushadhi_warehouse_name: name,
+                                        }
                                         : r,
                                     ),
                                   );
@@ -823,7 +820,7 @@ export default function InstituteMappingAdmin() {
                   {newSupplierRows.map((s, idx) => {
                     const totalSuppliers = supplierRows.length + newSupplierRows.length;
                     const canDelete = totalSuppliers > 1;
-                    
+
                     const usedIds = new Set([
                       ...supplierRows.map((r) => r.supplier_id),
                       ...newSupplierRows
@@ -854,11 +851,11 @@ export default function InstituteMappingAdmin() {
                                     rows.map((r, i) =>
                                       i === idx
                                         ? {
-                                            ...r,
-                                            supplier_id: id,
-                                            supplier_name: name,
-                                            eaushadhi_warehouse_name: name,
-                                          }
+                                          ...r,
+                                          supplier_id: id,
+                                          supplier_name: name,
+                                          eaushadhi_warehouse_name: name,
+                                        }
                                         : r,
                                     ),
                                   );
@@ -927,15 +924,15 @@ export default function InstituteMappingAdmin() {
                 {/* Add another supplier - only show if suppliers available */}
                 {suppliers.length >
                   supplierRows.length + newSupplierRows.length && (
-                  <button
-                    type="button"
-                    onClick={addNewSupplierRow}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
-                  >
-                    <span className="text-base">+</span>{" "}
-                    {t("drawer_add_supplier")}
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      onClick={addNewSupplierRow}
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm text-green-700 hover:text-green-800 border border-dashed border-green-300 rounded-lg py-2 hover:bg-green-50 transition-colors"
+                    >
+                      <span className="text-base">+</span>{" "}
+                      {t("drawer_add_supplier")}
+                    </button>
+                  )}
               </div>
 
               <hr className="border-gray-200" />
