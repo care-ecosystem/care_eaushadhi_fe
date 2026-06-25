@@ -213,6 +213,43 @@ export default function InstituteMappingAdmin() {
     return pluginConfig?.config?.[fieldKey as keyof typeof pluginConfig.config] === true;
   };
 
+  /**
+   * Get combined supplier mappings (existing + new)
+   */
+  const getCombinedSupplierMappings = () => {
+    return [
+      ...supplierRows.map((s) => ({
+        id: s.id,
+        supplier_id: s.supplier_id,
+        eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
+        is_default: s.is_default,
+      })),
+      ...newSupplierRows
+        .filter((s) => s.supplier_id)
+        .map((s) => ({
+          supplier_id: s.supplier_id,
+          eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
+          is_default: s.is_default,
+        })),
+    ];
+  };
+
+  /**
+   * Validate supplier mappings - at least one supplier must be selected
+   */
+  const validateSupplierMappings = (): boolean => {
+    const selectedSuppliers = [
+      ...supplierRows.filter((s) => s.supplier_id),
+      ...newSupplierRows.filter((s) => s.supplier_id),
+    ];
+
+    if (selectedSuppliers.length === 0) {
+      toast.error(t("drawer_at_least_one_supplier_required") || "At least one supplier must be selected");
+      return false;
+    }
+    return true;
+  };
+
   // ─── Queries ───────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ["institute-mappings-admin"],
@@ -268,29 +305,18 @@ export default function InstituteMappingAdmin() {
       ),
     onSuccess: async () => {
       try {
-        const combinedSupplierMappings = [
-          ...supplierRows.map((s) => ({
-            id: s.id,
-            supplier_id: s.supplier_id,
-            eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
-            is_default: s.is_default,
-          })),
-          ...newSupplierRows
-            .filter((s) => s.supplier_id)
-            .map((s) => ({
-              supplier_id: s.supplier_id,
-              eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
-              is_default: s.is_default,
-            })),
-        ];
+        const combinedSupplierMappings = getCombinedSupplierMappings();
 
-        await request(
-          `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
-          HttpMethod.PATCH,
-          {
-            supplier_mappings: combinedSupplierMappings,
-          },
-        );
+        // Only call supplier-mappings API if there are suppliers to save
+        if (combinedSupplierMappings.length > 0) {
+          await request(
+            `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/supplier-mappings/`,
+            HttpMethod.PATCH,
+            {
+              supplier_mappings: combinedSupplierMappings,
+            },
+          );
+        }
 
         toast.success(t("drawer_mapping_updated"));
         queryClient.invalidateQueries({
@@ -332,23 +358,18 @@ export default function InstituteMappingAdmin() {
           throw new Error("No mapping ID returned from create");
         }
 
-        const combinedSupplierMappings = [
-          ...newSupplierRows
-            .filter((s) => s.supplier_id)
-            .map((s) => ({
-              supplier_id: s.supplier_id,
-              eaushadhi_warehouse_name: s.eaushadhi_warehouse_name,
-              is_default: s.is_default,
-            })),
-        ];
+        const combinedSupplierMappings = getCombinedSupplierMappings();
 
-        await request(
-          `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
-          HttpMethod.PATCH,
-          {
-            supplier_mappings: combinedSupplierMappings,
-          },
-        );
+        // Only call supplier-mappings API if there are suppliers to save
+        if (combinedSupplierMappings.length > 0) {
+          await request(
+            `/api/care_eaushadhi/institute-mappings/${newMappingId}/supplier-mappings/`,
+            HttpMethod.PATCH,
+            {
+              supplier_mappings: combinedSupplierMappings,
+            },
+          );
+        }
 
         toast.success(t("drawer_mapping_created"));
         queryClient.invalidateQueries({
@@ -401,6 +422,47 @@ export default function InstituteMappingAdmin() {
     ]);
   };
 
+  /**
+   * Initialize form with one empty supplier row when creating new mapping
+   */
+  const initializeNewMapping = () => {
+    setSelectedMapping({
+      id: "",
+      facility_id: "",
+      eaushadhi_institute_id: "",
+      schema_version: SCHEMA_VERSIONS[0],
+      credentials_ref: DEFAULT_CREDENTIALS_REF,
+      meta: {
+        disable_inward_date: false,
+        manual_addition: false,
+        allow_deleting_inward_after_fetch: false,
+        allow_updating_quantity_after_received: false,
+        allow_creating_product_knowledge: false,
+      },
+      supplier_mappings: [],
+    });
+    setFacilityId("");
+    setInstituteId("");
+    setSchemaVersion(SCHEMA_VERSIONS[0]);
+    setCredentialsRef(DEFAULT_CREDENTIALS_REF);
+    setDisableInwardDate(false);
+    setManualAddition(false);
+    setAllowDeletingInwardAfterFetch(false);
+    setAllowUpdatingQuantityAfterReceived(false);
+    setAllowCreatingProductKnowledge(false);
+    setSupplierRows([]);
+    // Initialize with one empty supplier row
+    setNewSupplierRows([
+      {
+        tempId: crypto.randomUUID(),
+        supplier_id: "",
+        supplier_name: "",
+        eaushadhi_warehouse_name: "",
+        is_default: true,
+      },
+    ]);
+  };
+
   // ─── Render ────────────────────────────────────────────────────────────
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6">
@@ -414,34 +476,7 @@ export default function InstituteMappingAdmin() {
         </div>
         <Button
           className="flex items-center gap-2"
-          onClick={() => {
-            setSelectedMapping({
-              id: "",
-              facility_id: "",
-              eaushadhi_institute_id: "",
-              schema_version: SCHEMA_VERSIONS[0],
-              credentials_ref: DEFAULT_CREDENTIALS_REF,
-              meta: {
-                disable_inward_date: false,
-                manual_addition: false,
-                allow_deleting_inward_after_fetch: false,
-                allow_updating_quantity_after_received: false,
-                allow_creating_product_knowledge: false,
-              },
-              supplier_mappings: [],
-            });
-            setFacilityId("");
-            setInstituteId("");
-            setSchemaVersion(SCHEMA_VERSIONS[0]);
-            setCredentialsRef(DEFAULT_CREDENTIALS_REF);
-            setDisableInwardDate(false);
-            setManualAddition(false);
-            setAllowDeletingInwardAfterFetch(false);
-            setAllowUpdatingQuantityAfterReceived(false);
-            setAllowCreatingProductKnowledge(false);
-            setSupplierRows([]);
-            setNewSupplierRows([]);
-          }}
+          onClick={initializeNewMapping}
         >
           <PlusCircle className="size-4" /> {t("admin_add_mapping")}
         </Button>
@@ -586,7 +621,7 @@ export default function InstituteMappingAdmin() {
                       <span className="text-red-500">*</span>
                     </label>
                     <SupplierSelect
-                      options={facilities.map((f) => ({
+                      options={getAvailableFacilities().map((f) => ({
                         id: f.id,
                         name: f.name,
                       }))}
@@ -658,18 +693,22 @@ export default function InstituteMappingAdmin() {
 
               <hr className="border-gray-200" />
 
-              {/* Supplier Mappings */}
+              {/* Supplier Mappings - NOW MANDATORY */}
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-1">
-                  {t("drawer_supplier_mappings_title")}
+                  {t("drawer_supplier_mappings_title")}{" "}
+                  <span className="text-red-500">*</span>
                 </h3>
                 <p className="text-sm text-gray-500 mb-4">
                   {t("drawer_supplier_mappings_subtitle")}
                 </p>
 
                 <div className="space-y-3">
-                  {/* Existing rows */}
+                  {/* Existing rows - show delete button only if there are 2+ suppliers total */}
                   {supplierRows.map((s, idx) => {
+                    const totalSuppliers = supplierRows.length + newSupplierRows.length;
+                    const canDelete = totalSuppliers > 1;
+                    
                     const usedIds = new Set([
                       ...supplierRows
                         .filter((_, i) => i !== idx)
@@ -712,17 +751,20 @@ export default function InstituteMappingAdmin() {
                                 placeholder={t("drawer_supplier_placeholder")}
                               />
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setSupplierRows((rows) =>
-                                  rows.filter((r) => r.id !== s.id),
-                                )
-                              }
-                              className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
+                            {/* Delete button only shown if more than 1 supplier exists */}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSupplierRows((rows) =>
+                                    rows.filter((r) => r.id !== s.id),
+                                  )
+                                }
+                                className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <Field
@@ -768,7 +810,11 @@ export default function InstituteMappingAdmin() {
                     );
                   })}
 
+                  {/* New rows - show delete button only if there are 2+ suppliers total */}
                   {newSupplierRows.map((s, idx) => {
+                    const totalSuppliers = supplierRows.length + newSupplierRows.length;
+                    const canDelete = totalSuppliers > 1;
+                    
                     const usedIds = new Set([
                       ...supplierRows.map((r) => r.supplier_id),
                       ...newSupplierRows
@@ -811,17 +857,20 @@ export default function InstituteMappingAdmin() {
                                 placeholder={t("drawer_supplier_placeholder")}
                               />
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setNewSupplierRows((rows) =>
-                                  rows.filter((_, i) => i !== idx),
-                                )
-                              }
-                              className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
+                            {/* Delete button only shown if more than 1 supplier exists */}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewSupplierRows((rows) =>
+                                    rows.filter((_, i) => i !== idx),
+                                  )
+                                }
+                                className="text-red-600 hover:text-white hover:bg-red-600 transition-colors p-1.5 rounded-md border border-red-300 hover:border-red-600 shrink-0"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <Field
@@ -864,16 +913,9 @@ export default function InstituteMappingAdmin() {
                       </div>
                     );
                   })}
-
-                  {supplierRows.length === 0 &&
-                    newSupplierRows.length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-2">
-                        {t("drawer_no_suppliers")}
-                      </p>
-                    )}
                 </div>
 
-                {/* Add another supplier */}
+                {/* Add another supplier - only show if suppliers available */}
                 {suppliers.length >
                   supplierRows.length + newSupplierRows.length && (
                   <button
@@ -1035,6 +1077,7 @@ export default function InstituteMappingAdmin() {
               <Button
                 onClick={() => {
                   if (!selectedMapping?.id) {
+                    // Validation for new mapping
                     if (!facilityId) {
                       toast.error(t("drawer_facility_required"));
                       return;
@@ -1047,7 +1090,15 @@ export default function InstituteMappingAdmin() {
                       toast.error(t("drawer_credentials_required"));
                       return;
                     }
+                    // Validate supplier mappings - at least one must be selected
+                    if (!validateSupplierMappings()) {
+                      return;
+                    }
                     createMapping();
+                    return;
+                  }
+                  // For existing mappings, also validate suppliers
+                  if (!validateSupplierMappings()) {
                     return;
                   }
                   saveMapping();
