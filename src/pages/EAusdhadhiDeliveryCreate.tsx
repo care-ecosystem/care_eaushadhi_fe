@@ -121,7 +121,7 @@ export default function EAusdhadhiDeliveryCreate({
   // Prepare supplier options
   const supplierOptions = supplierMappings.map((mapping) => ({
     id: mapping.supplier_id,
-    name: `${mapping.supplier_name}`,
+    name: mapping.supplier_name,
   }));
 
   // Loading state
