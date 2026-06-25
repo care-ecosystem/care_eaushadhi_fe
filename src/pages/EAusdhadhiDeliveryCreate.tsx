@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { navigate } from "raviger";
 import { useMutation } from "@tanstack/react-query";
@@ -118,11 +118,19 @@ export default function EAusdhadhiDeliveryCreate({
     },
   });
 
-  // Prepare supplier options
-  const supplierOptions = supplierMappings.map((mapping) => ({
-    id: mapping.supplier_id,
-    name: mapping.supplier_name,
-  }));
+  // Prepare supplier options (deduplicated by supplier_id)
+  const supplierOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          supplierMappings.map((mapping) => [
+            mapping.supplier_id,
+            { id: mapping.supplier_id, name: mapping.supplier_name },
+          ]),
+        ).values(),
+      ),
+    [supplierMappings],
+  );
 
   // Loading state
   if (isLoading) {

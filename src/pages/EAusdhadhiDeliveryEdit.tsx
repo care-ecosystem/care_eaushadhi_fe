@@ -75,10 +75,19 @@ export default function EAusdhadhiDeliveryEdit({
     }
   }, [existingOrder]);
 
-  const supplierOptions = supplierMappings.map((mapping) => ({
-    id: mapping.supplier_id,
-    name: mapping.supplier_name,
-  }));
+  // Prepare supplier options (deduplicated by supplier_id)
+  const supplierOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          supplierMappings.map((mapping) => [
+            mapping.supplier_id,
+            { id: mapping.supplier_id, name: mapping.supplier_name },
+          ]),
+        ).values(),
+      ),
+    [supplierMappings],
+  );
 
   const { mutate: updateDeliveryOrder, isPending } = useMutation({
     mutationFn: () =>
