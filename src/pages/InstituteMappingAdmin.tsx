@@ -10,6 +10,8 @@ import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
+import { PLUGIN_SLUG } from "@/lib/contants";
+import { PlugConfigMeta } from "@/types/plugin";
 
 // Constants
 const SCHEMA_VERSIONS = ["1.0"];
@@ -55,6 +57,26 @@ interface Facility {
 interface Organization {
   id: string;
   name: string;
+}
+
+// ─── Helper Function to Get Plugin Config ──────────────────────────────────
+/**
+ * Get plugin configuration from window.__CARE_PLUGIN_RUNTIME__.meta
+ * This is the runtime configuration set by the CARE platform
+ */
+function getPluginConfig(): PlugConfigMeta | null {
+  try {
+    if (!window.__CARE_PLUGIN_RUNTIME__?.meta?.[PLUGIN_SLUG]) {
+      console.warn(`Plugin config not found for slug: ${PLUGIN_SLUG}`);
+      return null;
+    }
+    const config = window.__CARE_PLUGIN_RUNTIME__.meta[PLUGIN_SLUG] as PlugConfigMeta;
+    console.log(`Loaded plugin config from runtime for slug: "${PLUGIN_SLUG}"`, config);
+    return config;
+  } catch (error) {
+    console.warn("Error accessing plugin runtime config:", error);
+    return null;
+  }
 }
 
 // ─── Reusable SupplierSelect ───────────────────────────────────────────────
@@ -151,10 +173,17 @@ function SupplierSelect({
 export default function InstituteMappingAdmin() {
   const queryClient = useQueryClient();
   const { t } = useTranslation(I18NNAMESPACE);
+
+  // Plugin config state
+  const [pluginConfig, setPluginConfig] = useState<PlugConfigMeta | null>(null);
+
+  // Mapping and data state
   const [selectedMapping, setSelectedMapping] =
     useState<InstituteMapping | null>(null);
   const [supplierRows, setSupplierRows] = useState<SupplierMapping[]>([]);
   const [newSupplierRows, setNewSupplierRows] = useState<NewSupplierRow[]>([]);
+
+  // Form fields
   const [facilityId, setFacilityId] = useState("");
   const [instituteId, setInstituteId] = useState("");
   const [schemaVersion, setSchemaVersion] = useState("");
@@ -170,6 +199,21 @@ export default function InstituteMappingAdmin() {
   const [allowCreatingProductKnowledge, setAllowCreatingProductKnowledge] =
     useState(false);
 
+  // Load plugin config on mount
+  useEffect(() => {
+    const config = getPluginConfig();
+    setPluginConfig(config);
+  }, []);
+
+  // ─── Helpers ───────────────────────────────────────────────────────────
+  /**
+   * Check if a field is enabled in plugin config
+   */
+  const fieldEnabled = (fieldKey: string): boolean => {
+    return pluginConfig?.config?.[fieldKey as keyof typeof pluginConfig.config] === true;
+  };
+
+  // ─── Queries ───────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ["institute-mappings-admin"],
     queryFn: () =>
@@ -203,6 +247,7 @@ export default function InstituteMappingAdmin() {
   const suppliers = organizationsData?.results ?? [];
   const mappings = data?.results ?? [];
 
+  // ─── Mutations ─────────────────────────────────────────────────────────
   const { mutate: saveMapping, isPending: isSaving } = useMutation({
     mutationFn: () =>
       request(
@@ -321,6 +366,7 @@ export default function InstituteMappingAdmin() {
     onError: () => toast.error(t("drawer_mapping_create_error")),
   });
 
+  // ─── Event Handlers ────────────────────────────────────────────────────
   const openDrawer = (m: InstituteMapping) => {
     setSelectedMapping(m);
     setFacilityId(m.facility_id);
@@ -355,6 +401,7 @@ export default function InstituteMappingAdmin() {
     ]);
   };
 
+  // ─── Render ────────────────────────────────────────────────────────────
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6">
       {/* Header */}
@@ -566,35 +613,46 @@ export default function InstituteMappingAdmin() {
                       {t("drawer_institute_id_hint")}
                     </p>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 mb-1 block">
-                      {t("drawer_schema_version_label")}
-                    </label>
-                    <SupplierSelect
-                      options={SCHEMA_VERSIONS.map((v) => ({ id: v, name: v }))}
-                      value={schemaVersion}
-                      onChange={(id) => setSchemaVersion(id)}
-                      placeholder={t("drawer_schema_version_placeholder")}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t("drawer_schema_version_hint")}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-900 mb-1 block">
-                      {t("drawer_credentials_ref_label")}{" "}
-                      <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      value={credentialsRef}
-                      onChange={(e) => setCredentialsRef(e.target.value)}
-                      className="h-9"
-                      placeholder={DEFAULT_CREDENTIALS_REF}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t("drawer_credentials_ref_hint")}
-                    </p>
-                  </div>
+
+                  {/* Conditional: Schema Version */}
+                  {fieldEnabled("schema_version") && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-900 mb-1 block">
+                        {t("drawer_schema_version_label")}
+                      </label>
+                      <SupplierSelect
+                        options={SCHEMA_VERSIONS.map((v) => ({
+                          id: v,
+                          name: v,
+                        }))}
+                        value={schemaVersion}
+                        onChange={(id) => setSchemaVersion(id)}
+                        placeholder={t("drawer_schema_version_placeholder")}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t("drawer_schema_version_hint")}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Conditional: Credentials Ref */}
+                  {fieldEnabled("credentials_ref") && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-900 mb-1 block">
+                        {t("drawer_credentials_ref_label")}{" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        value={credentialsRef}
+                        onChange={(e) => setCredentialsRef(e.target.value)}
+                        className="h-9"
+                        placeholder={DEFAULT_CREDENTIALS_REF}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t("drawer_credentials_ref_hint")}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -840,90 +898,107 @@ export default function InstituteMappingAdmin() {
                   {t("drawer_settings_subtitle")}
                 </p>
                 <div className="space-y-5">
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="disable-inward-date"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_disable_inward_date_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_disable_inward_date_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="disable-inward-date"
-                      checked={disableInwardDate}
-                      onCheckedChange={setDisableInwardDate}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="manual-addition"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_manual_addition_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_manual_addition_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="manual-addition"
-                      checked={manualAddition}
-                      onCheckedChange={setManualAddition}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="allow-deleting-inward"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_allow_deleting_inward_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_allow_deleting_inward_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="allow-deleting-inward"
-                      checked={allowDeletingInwardAfterFetch}
-                      onCheckedChange={setAllowDeletingInwardAfterFetch}
-                    />
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="justify-between items-start"
-                  >
-                    <div className="flex-1">
-                      <FieldLabel
-                        htmlFor="allow-updating-quantity"
-                        className="text-sm font-medium text-gray-900"
-                      >
-                        {t("drawer_allow_updating_quantity_label")}
-                      </FieldLabel>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {t("drawer_allow_updating_quantity_hint")}
-                      </p>
-                    </div>
-                    <Switch
-                      id="allow-updating-quantity"
-                      checked={allowUpdatingQuantityAfterReceived}
-                      onCheckedChange={setAllowUpdatingQuantityAfterReceived}
-                    />
-                  </Field>
+                  {/* Conditional: Disable Inward Date */}
+                  {fieldEnabled("disable_inward_date") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="disable-inward-date"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_disable_inward_date_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_disable_inward_date_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="disable-inward-date"
+                        checked={disableInwardDate}
+                        onCheckedChange={setDisableInwardDate}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Conditional: Manual Addition */}
+                  {fieldEnabled("manual_addition") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="manual-addition"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_manual_addition_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_manual_addition_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="manual-addition"
+                        checked={manualAddition}
+                        onCheckedChange={setManualAddition}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Conditional: Allow Deleting Inward After Fetch */}
+                  {fieldEnabled("allow_deleting_inward_after_fetch") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-deleting-inward"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_allow_deleting_inward_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_deleting_inward_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-deleting-inward"
+                        checked={allowDeletingInwardAfterFetch}
+                        onCheckedChange={setAllowDeletingInwardAfterFetch}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Conditional: Allow Updating Quantity After Received */}
+                  {fieldEnabled("allow_updating_quantity_after_received") && (
+                    <Field
+                      orientation="horizontal"
+                      className="justify-between items-start"
+                    >
+                      <div className="flex-1">
+                        <FieldLabel
+                          htmlFor="allow-updating-quantity"
+                          className="text-sm font-medium text-gray-900"
+                        >
+                          {t("drawer_allow_updating_quantity_label")}
+                        </FieldLabel>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {t("drawer_allow_updating_quantity_hint")}
+                        </p>
+                      </div>
+                      <Switch
+                        id="allow-updating-quantity"
+                        checked={allowUpdatingQuantityAfterReceived}
+                        onCheckedChange={setAllowUpdatingQuantityAfterReceived}
+                      />
+                    </Field>
+                  )}
+
+                  {/* Always Visible: Allow Creating Product Knowledge */}
                   <Field
                     orientation="horizontal"
                     className="justify-between items-start"
@@ -968,7 +1043,7 @@ export default function InstituteMappingAdmin() {
                       toast.error(t("drawer_institute_id_required"));
                       return;
                     }
-                    if (!credentialsRef) {
+                    if (fieldEnabled("credentials_ref") && !credentialsRef) {
                       toast.error(t("drawer_credentials_required"));
                       return;
                     }
