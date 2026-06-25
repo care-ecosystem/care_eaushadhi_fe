@@ -208,6 +208,7 @@ interface SupplierMapping {
   id: string;
   supplier_id: string;
   eaushadhi_warehouse_name: string;
+  supplier_name: string;
   is_default: boolean;
 }
 
@@ -921,7 +922,7 @@ export default function AddSupplyDeliveryForm({
       (sm) => sm.supplier_id === supplierId,
     );
 
-    return supplierMapping?.eaushadhi_warehouse_name || null;
+    return supplierMapping?.supplier_name ?? null;
   }, [supplierId, instituteMappings]);
 
   // Step 2: Fetch inward record and prefill rows
