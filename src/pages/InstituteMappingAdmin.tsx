@@ -283,6 +283,15 @@ export default function InstituteMappingAdmin() {
   const facilities = facilitiesData?.results ?? [];
   const suppliers = organizationsData?.results ?? [];
   const mappings = data?.results ?? [];
+  const getAvailableFacilities = () => {
+    const mappedFacilityIds = new Set(mappings.map((m) => m.facility_id));
+      return facilities.filter(
+        (facility) =>
+          !mappedFacilityIds.has(facility.id) || facility.id === facilityId,
+      );
+    };
+
+
 
   // ─── Mutations ─────────────────────────────────────────────────────────
   const { mutate: saveMapping, isPending: isSaving } = useMutation({
