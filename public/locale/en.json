@@ -244,5 +244,8 @@
   "create_pk_error_name_required": "Name is required",
   "create_pk_error_slug_invalid": "Slug must be 5–25 characters and contain only lowercase letters, numbers, hyphens, or underscores",
   "create_pk_error_category_required": "Category is required",
-  "create_pk_error_base_unit_required": "Base unit is required"
+  "create_pk_error_base_unit_required": "Base unit is required",
+  "supply_form_product_group_imported": "Imported",
+  "supply_form_product_group_suggestions": "Suggestions",
+  "times": "times"
 }
