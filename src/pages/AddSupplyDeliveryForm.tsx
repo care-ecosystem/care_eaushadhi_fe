@@ -564,6 +564,7 @@ function ProductMappingSelector({
   const [canCreate, setCanCreate] = useState<boolean>(false);
   const [isSearching, setIsSearching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
 
   // Initialize with autofill mapping if available
   useEffect(() => {
@@ -609,8 +610,9 @@ function ProductMappingSelector({
   // Fetch mappings when dropdown opens
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open && searchResults.length === 0 && !isSearching) {
+    if (open && !hasFetched && !isSearching) {
       fetchMappings();
+      setHasFetched(true);
     }
   };
 
@@ -671,7 +673,7 @@ function ProductMappingSelector({
                 {mapping.product_knowledge.name}
               </SelectItem>
             ))}
-          {!isSearching && (meta?.allow_creating_product_knowledge ?? false) && (
+          {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
             <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
               <Button
                 variant="primary"
