@@ -229,6 +229,10 @@ interface InitiateInwardFetchPayload {
   force_refresh: boolean;
 }
 
+interface DefaultProductMappingsResponse {
+  results: ProductMapping[];
+}
+
 const EMPTY_ROW = (): RowItem => ({
   product_knowledge_id: "",
   product_knowledge_slug: "",
@@ -541,6 +545,7 @@ function ProductMappingSelector({
   onSelect,
   suggestedBaseUnitCode,
   suggestedName,
+  autofillMapping,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
@@ -550,6 +555,7 @@ function ProductMappingSelector({
   onSelect: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
   suggestedName?: string;
+  autofillMapping?: ProductMapping;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const { meta } = useInstituteMapping();
@@ -558,8 +564,22 @@ function ProductMappingSelector({
   const [canCreate, setCanCreate] = useState<boolean>(false);
   const [isSearching, setIsSearching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
 
-  // Fetch product mappings when dropdown opens
+  // Initialize with autofill mapping if available
+  useEffect(() => {
+    if (
+      autofillMapping &&
+      eaushadhiDrugId === autofillMapping.eaushadhi_drug_id
+    ) {
+      setSearchResults([autofillMapping]);
+      if (!value) {
+        onSelect(autofillMapping);
+      }
+    }
+  }, [autofillMapping, eaushadhiDrugId, value, onSelect]);
+
+  // Fetch product mappings when dropdown opens (search behavior)
   const fetchMappings = useCallback(async (): Promise<ProductMapping[]> => {
     if (!eaushadhiDrugId || isSearching) return [];
 
@@ -585,13 +605,14 @@ function ProductMappingSelector({
     } finally {
       setIsSearching(false);
     }
-  }, [facilityId, eaushadhiDrugId, isSearching]);
+  }, [facilityId, eaushadhiDrugId, isSearching, t]);
 
   // Fetch mappings when dropdown opens
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open && searchResults.length === 0 && !isSearching) {
+    if (open && !hasFetched && !isSearching) {
       fetchMappings();
+      setHasFetched(true);
     }
   };
 
@@ -702,6 +723,7 @@ function DeliveryRow({
   onRemove,
   allowDeletingInward,
   allowUpdatingQuantity,
+  autofillMapping,
 }: {
   facilityId: string;
   row: RowItem;
@@ -709,6 +731,7 @@ function DeliveryRow({
   onRemove: () => void;
   allowDeletingInward: boolean;
   allowUpdatingQuantity: boolean;
+  autofillMapping?: ProductMapping;
   suggestedBaseUnitCode?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
@@ -762,6 +785,7 @@ function DeliveryRow({
             onSelect={handleSelectMapping}
             suggestedBaseUnitCode={row.suggested_base_unit_code}
             suggestedName={row.product_knowledge_name}
+            autofillMapping={autofillMapping}
           />
           {row.eaushadhi_drug_name && (
             // AFTER
@@ -936,6 +960,31 @@ export default function AddSupplyDeliveryForm({
     enabled: !!inwardRecordId,
   });
 
+  // Step 3: Fetch default product mappings for autofill
+  const { data: defaultMappingsData } = useQuery({
+    queryKey: ["defaultProductMappings", inwardRecordId],
+    queryFn: () =>
+      request<DefaultProductMappingsResponse>(
+        `/api/care_eaushadhi/product-mappings/default-mapping/`,
+        HttpMethod.GET,
+        {
+          inward_record_id: inwardRecordId,
+        },
+      ),
+    enabled: !!inwardRecordId,
+  });
+
+  // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
+  const autofillMappingsMap = useMemo(() => {
+    const map = new Map<string, ProductMapping>();
+    if (defaultMappingsData?.results) {
+      defaultMappingsData.results.forEach((mapping) => {
+        map.set(mapping.eaushadhi_drug_id, mapping);
+      });
+    }
+    return map;
+  }, [defaultMappingsData]);
+
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
     return inwardRecord?.deliveries.find(
       (d) =>
@@ -953,7 +1002,7 @@ export default function AddSupplyDeliveryForm({
   // Derive inwardDate from prop or inward record
   const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
 
-  // Step 3: Filter and prefill rows based on warehouse name
+  // Step 4: Filter and prefill rows based on warehouse name
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
@@ -1044,7 +1093,7 @@ export default function AddSupplyDeliveryForm({
       console.error("Error prefilling data:", err);
       setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord, supplierWarehouseName]);
+  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -1421,6 +1470,7 @@ export default function AddSupplyDeliveryForm({
                 allowUpdatingQuantity={
                   meta?.allow_updating_quantity_after_received ?? true
                 }
+                autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
               />
             ))}
           </tbody>
