@@ -572,7 +572,9 @@ function ProductMappingSelector({
       autofillMapping &&
       eaushadhiDrugId === autofillMapping.eaushadhi_drug_id
     ) {
-      setSearchResults([autofillMapping]);
+      if (!hasFetched) {
+        setSearchResults([autofillMapping]);
+      }
       if (!value) {
         onSelect(autofillMapping);
       }
