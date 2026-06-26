@@ -671,7 +671,7 @@ function ProductMappingSelector({
                 {mapping.product_knowledge.name}
               </SelectItem>
             ))}
-          {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
+          {!isSearching && (meta?.allow_creating_product_knowledge ?? false) && (
             <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
               <Button
                 variant="primary"
