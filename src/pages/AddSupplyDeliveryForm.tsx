@@ -13,10 +13,13 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import * as SelectPrimitive from "@radix-ui/react-select";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -133,6 +136,8 @@ interface ProductMapping {
   eaushadhi_drug_name: string;
   eaushadhi_drug_id: string;
   product_knowledge: ProductKnowledge;
+  mapping_type?: string;
+  usage_count?: number;
 }
 
 interface RowItem {
@@ -618,12 +623,11 @@ function ProductMappingSelector({
     }
   };
 
-  const selectedMapping = searchResults.find((m) => m.id === value);
 
   return (
     <>
       <Select
-        value={value}
+        value={value || undefined}
         onValueChange={(mappingId) => {
           const mapping = searchResults.find((m) => m.id === mappingId);
           if (mapping) {
@@ -642,9 +646,7 @@ function ProductMappingSelector({
                 ? t("supply_form_no_drug_selected")
                 : isSearching
                   ? t("supply_form_loading")
-                  : selectedMapping
-                    ? selectedMapping.product_knowledge.name
-                    : t("supply_form_select_product")
+                  : t("supply_form_select_product")
             }
           />
         </SelectTrigger>
@@ -665,16 +667,49 @@ function ProductMappingSelector({
               </p>
             </div>
           )}
-          {!isSearching &&
-            searchResults.map((mapping) => (
-              <SelectItem
-                key={mapping.id}
-                value={mapping.id}
-                className="whitespace-normal wrap-break-word"
-              >
-                {mapping.product_knowledge.name}
-              </SelectItem>
-            ))}
+          {!isSearching && (() => {
+            const imported = searchResults.filter(m => m.mapping_type === "BULK_IMPORT");
+            const suggestions = searchResults
+              .filter(m => m.mapping_type !== "BULK_IMPORT")
+              .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0));
+
+            const renderGroup = (label: string, items: typeof searchResults) =>
+              items.length > 0 && (
+                <SelectGroup key={label}>
+                  <SelectLabel className="text-xs text-gray-400 font-medium px-2 py-1">
+                    {label}
+                  </SelectLabel>
+                  {items.map((mapping) => (
+                    <SelectPrimitive.Item
+                      key={mapping.id}
+                      value={mapping.id}
+                      className="focus:bg-gray-100 focus:text-gray-900 relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 whitespace-normal wrap-break-word"
+                    >
+                      <span className="absolute right-2 flex size-3.5 items-center justify-center">
+                        <SelectPrimitive.ItemIndicator>
+                          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polyline points="20 6 9 17 4 12" /></svg>
+                        </SelectPrimitive.ItemIndicator>
+                      </span>
+                      <SelectPrimitive.ItemText>
+                        {mapping.product_knowledge.name}
+                      </SelectPrimitive.ItemText>
+                      {(mapping.usage_count ?? 0) > 0 && (
+                        <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
+                          {mapping.usage_count}&nbsp;{t("times")}
+                        </span>
+                      )}
+                    </SelectPrimitive.Item>
+                  ))}
+                </SelectGroup>
+              );
+
+            return (
+              <>
+                {renderGroup(t("supply_form_product_group_imported"), imported)}
+                {renderGroup(t("supply_form_product_group_suggestions"), suggestions)}
+              </>
+            );
+          })()}
           {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
             <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
               <Button
@@ -835,18 +870,23 @@ function DeliveryRow({
           disabled
         />
       </td>
-      <td className="px-2 py-2 shrink-0 w-32">
-        <Input
-          type="number"
-          min={0}
-          value={row.accepted_pack_qty}
-          onChange={(e) =>
-            set("accepted_pack_qty", parseInt(e.target.value) || 0)
-          }
-          className="h-9 text-xs w-full"
-          disabled={!allowUpdatingQuantity}
-        />
-      </td>
+      {
+        allowUpdatingQuantity && 
+        (
+          <td className="px-2 py-2 shrink-0 w-32">
+            <Input
+              type="number"
+              min={0}
+              value={row.accepted_pack_qty}
+              onChange={(e) =>
+                set("accepted_pack_qty", parseInt(e.target.value) || 0)
+              }
+              className="h-9 text-xs w-full"
+              disabled={!allowUpdatingQuantity}
+            />
+          </td>
+        )
+      }
       <td className="px-2 py-2 shrink-0 w-32">
         <div className="flex flex-col gap-1">
           <Input
@@ -1445,13 +1485,18 @@ export default function AddSupplyDeliveryForm({
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
                 {t("supply_form_col_pack_qty")}
               </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                {t("supply_form_col_accepted_pack_qty")}
-              </th>
+              {
+                meta?.allow_updating_quantity_after_received &&
+                (
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
+                    {t("supply_form_col_accepted_pack_qty")}
+                  </th>
+                )
+              }
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
                 {t("supply_form_col_qty_in_units")}
               </th>
-              {(meta?.allow_deleting_inward_after_fetch ?? true) && (
+              {(meta?.allow_deleting_inward_after_fetch ?? false) && (
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
                   {t("supply_form_col_actions")}
                 </th>
@@ -1467,10 +1512,10 @@ export default function AddSupplyDeliveryForm({
                 onChange={(updated) => updateRow(index, updated)}
                 onRemove={() => removeRow(index)}
                 allowDeletingInward={
-                  meta?.allow_deleting_inward_after_fetch ?? true
+                  meta?.allow_deleting_inward_after_fetch ?? false
                 }
                 allowUpdatingQuantity={
-                  meta?.allow_updating_quantity_after_received ?? true
+                  meta?.allow_updating_quantity_after_received ?? false
                 }
                 autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
               />
