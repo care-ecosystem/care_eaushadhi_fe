@@ -373,10 +373,7 @@ export default function InstituteMappingAdmin() {
             supplier_mappings: combinedSupplierMappings,
           },
         );
-
-        toast.success(t("drawer_mapping_created"));
-
-
+        
         toast.success(t("drawer_mapping_created"));
         queryClient.invalidateQueries({
           queryKey: ["institute-mappings-admin"],
