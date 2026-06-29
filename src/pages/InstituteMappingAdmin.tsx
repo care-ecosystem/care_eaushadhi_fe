@@ -300,6 +300,7 @@ export default function InstituteMappingAdmin() {
         `/api/care_eaushadhi/institute-mappings/${selectedMapping?.id}/`,
         HttpMethod.PATCH,
         {
+          eaushadhi_institute_id: instituteId,
           schema_version: schemaVersion,
           credentials_ref: credentialsRef,
           meta: {
