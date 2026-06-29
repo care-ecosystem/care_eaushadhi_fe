@@ -1293,7 +1293,7 @@ export default function AddSupplyDeliveryForm({
 
     try {
       // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
-      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined) {
+      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && recordDeliveryId.current === null) {
         const response = await recordDeliveries({
           inward_record_id: inwardRecordId,
           facility_id: facilityId,
