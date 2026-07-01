@@ -955,7 +955,29 @@ export default function AddSupplyDeliveryForm({
   }, []);
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
-  const recordDeliveryId = useRef<string | null>(null);
+
+  // ✅ CHANGE 1️⃣: ADD HELPER FUNCTIONS
+  const getRecordDeliveryIdFromUrl = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("record_delivery_id");
+  };
+
+  const addRecordDeliveryIdToUrl = (recordDeliveryId: string): void => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("record_delivery_id", recordDeliveryId);
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}?${params.toString()}`
+    );
+  };
+
+  // ✅ CHANGE 2️⃣: INITIALIZE FROM URL PARAMS
+  const recordDeliveryId = useRef<string | null>(
+    getRecordDeliveryIdFromUrl()
+  );
 
   const updateRow = useCallback((index: number, updated: RowItem) => {
     setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
@@ -991,7 +1013,6 @@ export default function AddSupplyDeliveryForm({
     return supplierMapping?.supplier_name ?? null;
   }, [supplierId, instituteMappings]);
 
-  // Step 2: Fetch inward record and prefill rows
   // Step 2: Fetch inward record with progressive pagination
   const [allInwardItems, setAllInwardItems] = useState<InwardItem[]>([]);
   const [inwardRecordMeta, setInwardRecordMeta] = useState<{
@@ -1262,19 +1283,47 @@ export default function AddSupplyDeliveryForm({
       },
     });
 
-  // Mutation for recording deliveries in eAushadhi system
-  const { mutateAsync: recordDeliveries } = useMutation({
-    mutationFn: async (payload: {
-      inward_record_id: string;
-      facility_id: string;
-      delivery_order_id: string;
-    }) =>
-      request<{ id: string }>(
+  // ✅ CHANGE 3️⃣: REPLACE MUTATION WITH MANUAL FUNCTION
+  const recordDeliveries = async (payload: {
+    inward_record_id: string;
+    facility_id: string;
+    delivery_order_id: string;
+  }) => {
+    // ✅ Step 1: Check if already in URL params
+    const existingId = getRecordDeliveryIdFromUrl();
+    if (existingId) {
+      console.log("✓ Using recordDeliveryId from URL params:", existingId);
+      return { id: existingId };
+    }
+
+    // ✅ Step 2: If not in URL, make POST call
+    try {
+      const response = await request<{ id: string }>(
         `/api/care_eaushadhi/record-deliveries/`,
         HttpMethod.POST,
         payload,
-      ),
-  });
+      );
+
+      // ✅ Step 3: Add to URL params for persistence
+      addRecordDeliveryIdToUrl(response.id);
+      console.log("✓ Created and cached recordDeliveryId in URL:", response.id);
+
+      return response;
+    } catch (err: any) {
+      // Handle 409 - might already be cached in URL
+      const is409 = err.status === 409 || err.statusCode === 409 || (err.message && err.message.includes("409"));
+      if (is409) {
+        // Try to get from URL params as fallback
+        const cachedId = getRecordDeliveryIdFromUrl();
+        if (cachedId) {
+          console.log("✓ Got recordDeliveryId from URL (409 fallback):", cachedId);
+          return { id: cachedId };
+        }
+        toast.error("This delivery order is already linked elsewhere. Please use a different delivery order.");
+      }
+      throw err;
+    }
+  };
 
   async function handleMarkDiscrepanciesAsError() {
     const allSupplyDeliveryIds = discrepancies.flatMap(
@@ -1396,17 +1445,24 @@ export default function AddSupplyDeliveryForm({
 
     try {
       // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
-      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && recordDeliveryId.current === null) {
-        const response = await recordDeliveries({
-          inward_record_id: inwardRecordId,
-          facility_id: facilityId,
-          delivery_order_id: deliveryOrderId,
-        });
+      // ✅ CHANGE 4️⃣: UPDATED CONDITION AND ADDED TRY-CATCH
+      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && !recordDeliveryId.current) {
+        try {
+          const response = await recordDeliveries({
+            inward_record_id: inwardRecordId,
+            facility_id: facilityId,
+            delivery_order_id: deliveryOrderId,
+          });
 
-        recordDeliveryId.current = response.id;
+          recordDeliveryId.current = response.id;
+          console.log("✓ Got recordDeliveryId:", response.id);
+        } catch (err) {
+          console.error("Failed to get recordDeliveryId:", err);
+          throw err;
+        }
       }
 
-      if (recordDeliveryId.current === null) {
+      if (!recordDeliveryId.current) {
         toast.error(t("supply_form_missing_record_delivery_ref"));
         return;
       }
