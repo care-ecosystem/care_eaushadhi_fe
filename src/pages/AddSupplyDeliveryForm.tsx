@@ -691,9 +691,7 @@ function ProductMappingSelector({
                         </SelectPrimitive.ItemIndicator>
                       </span>
                       <SelectPrimitive.ItemText>
-                        {mapping.mapping_type === "BULK_IMPORT" 
-                          ? mapping.eaushadhi_drug_name 
-                          : mapping.product_knowledge.name}
+                        {mapping.product_knowledge.name}
                       </SelectPrimitive.ItemText>
                       {(mapping.usage_count ?? 0) > 0 && (
                         <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
@@ -994,6 +992,7 @@ export default function AddSupplyDeliveryForm({
   }, [supplierId, instituteMappings]);
 
   // Step 2: Fetch inward record and prefill rows
+  // Step 2: Fetch inward record with progressive pagination
   const [allInwardItems, setAllInwardItems] = useState<InwardItem[]>([]);
   const [inwardRecordMeta, setInwardRecordMeta] = useState<{
     id: string;
@@ -1007,7 +1006,7 @@ export default function AddSupplyDeliveryForm({
   const [isLoadingInward, setIsLoadingInward] = useState(false);
   const [paginationInProgress, setPaginationInProgress] = useState(false);
   const paginationOffsetRef = useRef(0);
-  const initializationRef = useRef(false);
+  const initializationRef = useRef(false); 
 
   const fetchInwardRecordPage = useCallback(
     async (offset: number) => {
@@ -1084,7 +1083,7 @@ export default function AddSupplyDeliveryForm({
 
   // Initialize pagination when inward record ID is set
   useEffect(() => {
-    // Prevent double initialization in React Strict Mode
+  // Prevent double initialization in React Strict Mode
     if (initializationRef.current) return;
     
     if (inwardRecordId && !paginationInProgress && allInwardItems.length === 0) {
@@ -1098,8 +1097,6 @@ export default function AddSupplyDeliveryForm({
     }
   }, [inwardRecordId]);
 
-
-
   // Construct inward record object for compatibility
   const inwardRecord = useMemo(() => {
     if (!inwardRecordMeta) return null;
@@ -1108,8 +1105,6 @@ export default function AddSupplyDeliveryForm({
       items: allInwardItems,
     };
   }, [inwardRecordMeta, allInwardItems]);
-
-
 
   // Step 3: Fetch default product mappings for autofill
   const { data: defaultMappingsData } = useQuery({
@@ -1128,13 +1123,13 @@ export default function AddSupplyDeliveryForm({
   // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
   const autofillMappingsMap = useMemo(() => {
     const map = new Map<string, ProductMapping>();
-    if (defaultMappingsData?.results && !paginationInProgress) {
+    if (defaultMappingsData?.results) {
       defaultMappingsData.results.forEach((mapping) => {
         map.set(mapping.eaushadhi_drug_id, mapping);
       });
     }
     return map;
-  }, [defaultMappingsData, paginationInProgress]);
+  }, [defaultMappingsData]);
 
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
     return inwardRecord?.deliveries.find(
@@ -1153,19 +1148,19 @@ export default function AddSupplyDeliveryForm({
   // Derive inwardDate from prop or inward record
   const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
 
-  // Step 4: Filter and prefill rows based on warehouse name
+  // Step 4: Prefill rows from inward record items (progressively as pages load)
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
     try {
+      // Items are already filtered by warehouse name from the API response
+      // No need to filter again on client side
       const filteredItems = inwardRecord.items;
 
       const newDiscrepancies: DiscrepancyItem[] = [];
 
       const newRows = filteredItems
         .map((item) => {
-
-
           const expiryDate = item.expiry_date
             ? item.expiry_date.split("T")[0]
             : "";
