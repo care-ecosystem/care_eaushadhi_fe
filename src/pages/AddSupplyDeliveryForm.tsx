@@ -40,7 +40,7 @@ import {
   extractChainResults,
   SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
-import { I18NNAMESPACE } from "@/lib/contants";
+import { I18NNAMESPACE, INWARD_RECORDS_PAGE_SIZE } from "@/lib/contants";
 import {
   formatDateForEaushadhiAPI,
   extractGenericName,
@@ -691,7 +691,9 @@ function ProductMappingSelector({
                         </SelectPrimitive.ItemIndicator>
                       </span>
                       <SelectPrimitive.ItemText>
-                        {mapping.product_knowledge.name}
+                        {mapping.mapping_type === "BULK_IMPORT" 
+                          ? mapping.eaushadhi_drug_name 
+                          : mapping.product_knowledge.name}
                       </SelectPrimitive.ItemText>
                       {(mapping.usage_count ?? 0) > 0 && (
                         <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
@@ -992,15 +994,122 @@ export default function AddSupplyDeliveryForm({
   }, [supplierId, instituteMappings]);
 
   // Step 2: Fetch inward record and prefill rows
-  const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
-    queryKey: ["inwardRecord", inwardRecordId],
-    queryFn: () =>
-      request<InwardRecord>(
-        `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
-        HttpMethod.GET,
-      ),
-    enabled: !!inwardRecordId,
-  });
+  const [allInwardItems, setAllInwardItems] = useState<InwardItem[]>([]);
+  const [inwardRecordMeta, setInwardRecordMeta] = useState<{
+    id: string;
+    facility_id: string;
+    inward_date: string;
+    sync_status: string;
+    items_initial_count: number;
+    items_current_count: number;
+    deliveries: Delivery[];
+  } | null>(null);
+  const [isLoadingInward, setIsLoadingInward] = useState(false);
+  const [paginationInProgress, setPaginationInProgress] = useState(false);
+  const paginationOffsetRef = useRef(0);
+  const initializationRef = useRef(false);
+
+  const fetchInwardRecordPage = useCallback(
+    async (offset: number) => {
+      if (!inwardRecordId) return;
+
+      try {
+        const response = await request<{
+          meta: Record<string, any>;
+          id: string;
+          facility_id: string;
+          inward_date: string;
+          count: number;
+          items: InwardItem[];
+        }>(
+          `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
+          HttpMethod.GET,
+          {
+            limit: INWARD_RECORDS_PAGE_SIZE,
+            offset: offset,
+            warehouse_name: supplierWarehouseName || undefined,
+          },
+        );
+
+        if (!response) return;
+
+        // Set metadata on first page
+        if (offset === 0) {
+          setInwardRecordMeta({
+            id: response.id,
+            facility_id: response.facility_id,
+            inward_date: response.inward_date,
+            sync_status: "FETCHED",
+            items_initial_count: response.count,
+            items_current_count: response.count,
+            deliveries: [],
+          });
+        }
+
+        // Accumulate items from this page - THIS TRIGGERS RE-RENDER
+        if (response.items && response.items.length > 0) {
+          setAllInwardItems((prev) => [...prev, ...response.items]);
+          // ↑ Items are added to state, which triggers the prefill effect
+          // ↑ UI renders immediately with new items
+        }
+
+        // Check if we need to fetch more pages
+        const totalItems = response.count;
+        const currentPageItems = response.items?.length || 0;
+        const fetchedItems = offset + currentPageItems;
+
+        console.log(
+          `[Pagination] Fetched ${currentPageItems} items. Total: ${totalItems}, Current offset: ${offset}, Accumulated: ${fetchedItems}`
+        );
+
+        // Auto-trigger next page fetch if there are more items
+        if (fetchedItems < totalItems) {
+          paginationOffsetRef.current = fetchedItems;
+          // Wait 100ms before fetching next page
+          setTimeout(() => {
+            fetchInwardRecordPage(fetchedItems);
+          }, 100);
+        } else {
+          // All pages fetched - discrepancy checks can start
+          console.log("[Pagination] All items fetched. Starting discrepancy checks.");
+          setPaginationInProgress(false);
+        }
+      } catch (err) {
+        console.error("Error fetching inward record page:", err);
+        setPaginationInProgress(false);
+      }
+    },
+    [inwardRecordId, supplierWarehouseName],
+  );
+
+  // Initialize pagination when inward record ID is set
+  useEffect(() => {
+    // Prevent double initialization in React Strict Mode
+    if (initializationRef.current) return;
+    
+    if (inwardRecordId && !paginationInProgress && allInwardItems.length === 0) {
+      initializationRef.current = true;  // ← Mark as initialized
+      setIsLoadingInward(true);
+      setPaginationInProgress(true);
+      paginationOffsetRef.current = 0;
+      fetchInwardRecordPage(0).finally(() => {
+        setIsLoadingInward(false);
+      });
+    }
+  }, [inwardRecordId]);
+
+
+
+  // Construct inward record object for compatibility
+  const inwardRecord = useMemo(() => {
+    if (!inwardRecordMeta) return null;
+    return {
+      ...inwardRecordMeta,
+      items: allInwardItems,
+    };
+  }, [inwardRecordMeta, allInwardItems]);
+
+
 
   // Step 3: Fetch default product mappings for autofill
   const { data: defaultMappingsData } = useQuery({
@@ -1019,13 +1128,13 @@ export default function AddSupplyDeliveryForm({
   // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
   const autofillMappingsMap = useMemo(() => {
     const map = new Map<string, ProductMapping>();
-    if (defaultMappingsData?.results) {
+    if (defaultMappingsData?.results && !paginationInProgress) {
       defaultMappingsData.results.forEach((mapping) => {
         map.set(mapping.eaushadhi_drug_id, mapping);
       });
     }
     return map;
-  }, [defaultMappingsData]);
+  }, [defaultMappingsData, paginationInProgress]);
 
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
     return inwardRecord?.deliveries.find(
@@ -1049,15 +1158,14 @@ export default function AddSupplyDeliveryForm({
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
     try {
-      // Filter items by warehouse name
-      const filteredItems = inwardRecord.items.filter(
-        (item) => item.warehouse_name === supplierWarehouseName,
-      );
+      const filteredItems = inwardRecord.items;
 
       const newDiscrepancies: DiscrepancyItem[] = [];
 
       const newRows = filteredItems
         .map((item) => {
+
+
           const expiryDate = item.expiry_date
             ? item.expiry_date.split("T")[0]
             : "";
@@ -1439,15 +1547,26 @@ export default function AddSupplyDeliveryForm({
           variant="outline"
           onClick={async () => {
             try {
+              // 1. Trigger backend to fetch new data from eAushadhi
               await initiateInwardFetch(true);
               toast.success(t("supply_form_refresh_success"));
-              // Invalidate the inward record query to trigger a refetch
-              await queryClient.invalidateQueries({
-                queryKey: ["inwardRecord", inwardRecordId],
+              
+              // 2. Reset pagination state for fresh fetch
+              setAllInwardItems([]);        // Clear accumulated items
+              setInwardRecordMeta(null);    // Clear metadata
+              setPaginationInProgress(true);  // Start pagination
+              paginationOffsetRef.current = 0; // Reset offset
+              
+              // 3. Start fresh pagination from page 0
+              setIsLoadingInward(true);
+              fetchInwardRecordPage(0).finally(() => {
+                setIsLoadingInward(false);
               });
             } catch (error) {
               console.error("Failed to refresh inward data:", error);
               toast.error(t("supply_form_refresh_error"));
+              // Reset pagination on error
+              setPaginationInProgress(false);
             }
           }}
           disabled={isFetching || !inwardDate}
