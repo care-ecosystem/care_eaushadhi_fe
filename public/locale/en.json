@@ -122,6 +122,7 @@
   "supply_form_original_qty": "Original Qty:",
   "supply_form_cancel": "Cancel",
   "supply_form_save": "Save",
+  "supply_form_loading_items": "Loading items...",
   "supply_form_saving": "Saving...",
   "supply_form_saved_success": "{{count}} item(s) saved successfully",
   "supply_form_save_error": "Failed to save: {{name}}",

@@ -825,7 +825,6 @@ function DeliveryRow({
             autofillMapping={autofillMapping}
           />
           {row.eaushadhi_drug_name && (
-            // AFTER
             <span className="text-xs text-gray-500 break-words">
               {t("supply_form_eaushadhi_prefix")} {row.eaushadhi_drug_name}
             </span>
@@ -947,7 +946,6 @@ export default function AddSupplyDeliveryForm({
   const [isMarkingAccepted, setIsMarkingAccepted] = useState(false);
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
 
-  // Extract inward_record_id from URL query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("inward_record_id");
@@ -956,7 +954,6 @@ export default function AddSupplyDeliveryForm({
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
 
-  // ✅ CHANGE 1️⃣: ADD HELPER FUNCTIONS
   const getRecordDeliveryIdFromUrl = (): string | null => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
@@ -974,7 +971,6 @@ export default function AddSupplyDeliveryForm({
     );
   };
 
-  // ✅ CHANGE 2️⃣: INITIALIZE FROM URL PARAMS
   const recordDeliveryId = useRef<string | null>(
     getRecordDeliveryIdFromUrl()
   );
@@ -1001,7 +997,6 @@ export default function AddSupplyDeliveryForm({
     enabled: !!facilityId,
   });
 
-  // Extract warehouse name from supplier mappings
   const supplierWarehouseName = useMemo(() => {
     if (!supplierId || !instituteMappings?.results?.[0]) return null;
 
@@ -1013,7 +1008,6 @@ export default function AddSupplyDeliveryForm({
     return supplierMapping?.supplier_name ?? null;
   }, [supplierId, instituteMappings]);
 
-  // Step 2: Fetch inward record with progressive pagination
   const [allInwardItems, setAllInwardItems] = useState<InwardItem[]>([]);
   const [inwardRecordMeta, setInwardRecordMeta] = useState<{
     id: string;
@@ -1024,101 +1018,119 @@ export default function AddSupplyDeliveryForm({
     items_current_count: number;
     deliveries: Delivery[];
   } | null>(null);
-  const [isLoadingInward, setIsLoadingInward] = useState(false);
   const [paginationInProgress, setPaginationInProgress] = useState(false);
-  const paginationOffsetRef = useRef(0);
-  const initializationRef = useRef(false); 
+  const initializationRef = useRef(false);
+  const paginationCancelledRef = useRef(false);
 
-  const fetchInwardRecordPage = useCallback(
-    async (offset: number) => {
+  const fetchAllInwardRecordPages = useCallback(
+    async () => {
       if (!inwardRecordId) return;
 
       try {
-        const response = await request<{
-          meta: Record<string, any>;
-          id: string;
-          facility_id: string;
-          inward_date: string;
-          count: number;
-          items: InwardItem[];
-        }>(
-          `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
-          HttpMethod.GET,
-          {
-            limit: INWARD_RECORDS_PAGE_SIZE,
-            offset: offset,
-            warehouse_name: supplierWarehouseName || undefined,
-          },
-        );
+        // Reset cancel flag
+        paginationCancelledRef.current = false;
 
-        if (!response) return;
+        let allItems: InwardItem[] = [];
+        let offset = 0;
+        let totalCount = 0;
+        let isFirstPage = true;
 
-        // Set metadata on first page
-        if (offset === 0) {
-          setInwardRecordMeta({
-            id: response.id,
-            facility_id: response.facility_id,
-            inward_date: response.inward_date,
-            sync_status: "FETCHED",
-            items_initial_count: response.count,
-            items_current_count: response.count,
-            deliveries: [],
-          });
-        }
+        do {
+          // Check if cancelled
+          if (paginationCancelledRef.current) {
+            console.log("[Pagination] Pagination cancelled by user");
+            setPaginationInProgress(false);
+            return;
+          }
 
-        // Accumulate items from this page - THIS TRIGGERS RE-RENDER
-        if (response.items && response.items.length > 0) {
-          setAllInwardItems((prev) => [...prev, ...response.items]);
-          // ↑ Items are added to state, which triggers the prefill effect
-          // ↑ UI renders immediately with new items
-        }
+          // Fetch current page
+          const pageResponse = await request<{
+            meta: Record<string, any>;
+            id: string;
+            facility_id: string;
+            inward_date: string;
+            count: number;
+            items: InwardItem[];
+          }>(
+            `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
+            HttpMethod.GET,
+            {
+              limit: INWARD_RECORDS_PAGE_SIZE,
+              offset: offset,
+              warehouse_name: supplierWarehouseName || undefined,
+            },
+          );
 
-        // Check if we need to fetch more pages
-        const totalItems = response.count;
-        const currentPageItems = response.items?.length || 0;
-        const fetchedItems = offset + currentPageItems;
+          if (!pageResponse) {
+            setPaginationInProgress(false);
+            return;
+          }
+
+          if (isFirstPage) {
+            setInwardRecordMeta({
+              id: pageResponse.id,
+              facility_id: pageResponse.facility_id,
+              inward_date: pageResponse.inward_date,
+              sync_status: "FETCHED",
+              items_initial_count: pageResponse.count,
+              items_current_count: pageResponse.count,
+              deliveries: [],
+            });
+            totalCount = pageResponse.count;
+            isFirstPage = false;
+          }
+
+          if (pageResponse.items && pageResponse.items.length > 0) {
+            allItems = [...allItems, ...pageResponse.items];
+          }
+
+          setAllInwardItems([...allItems]);
+
+          const pageNumber = Math.floor(offset / INWARD_RECORDS_PAGE_SIZE) + 1;
+          const totalPages = Math.ceil(totalCount / INWARD_RECORDS_PAGE_SIZE);
+
+          console.log(
+            `[Pagination] Page ${pageNumber}/${totalPages}: Fetched ${pageResponse.items?.length || 0} items. Total so far: ${allItems.length}/${totalCount}`
+          );
+
+          offset += INWARD_RECORDS_PAGE_SIZE;
+
+        } while (offset < totalCount);  
 
         console.log(
-          `[Pagination] Fetched ${currentPageItems} items. Total: ${totalItems}, Current offset: ${offset}, Accumulated: ${fetchedItems}`
+          `[Pagination] All ${allItems.length} items fetched successfully!`
         );
-
-        // Auto-trigger next page fetch if there are more items
-        if (fetchedItems < totalItems) {
-          paginationOffsetRef.current = fetchedItems;
-          // Wait 100ms before fetching next page
-          setTimeout(() => {
-            fetchInwardRecordPage(fetchedItems);
-          }, 100);
-        } else {
-          // All pages fetched - discrepancy checks can start
-          console.log("[Pagination] All items fetched. Starting discrepancy checks.");
-          setPaginationInProgress(false);
-        }
+        setPaginationInProgress(false);
       } catch (err) {
-        console.error("Error fetching inward record page:", err);
+        console.error("Error fetching inward record pages:", err);
         setPaginationInProgress(false);
       }
     },
     [inwardRecordId, supplierWarehouseName],
   );
 
-  // Initialize pagination when inward record ID is set
+  const handleCancel = useCallback(() => {
+    console.log("[Cancel] User clicked Cancel button");
+    paginationCancelledRef.current = true;
+    setPaginationInProgress(false);
+    setRows([]);
+    setAllInwardItems([]);
+    setInwardRecordMeta(null);
+    initializationRef.current = false;
+    console.log("[Cancel] Pagination exited");
+  }, []);
+
   useEffect(() => {
-  // Prevent double initialization in React Strict Mode
     if (initializationRef.current) return;
-    
+
     if (inwardRecordId && !paginationInProgress && allInwardItems.length === 0) {
-      initializationRef.current = true;  // ← Mark as initialized
-      setIsLoadingInward(true);
+      initializationRef.current = true;
       setPaginationInProgress(true);
-      paginationOffsetRef.current = 0;
-      fetchInwardRecordPage(0).finally(() => {
-        setIsLoadingInward(false);
+      fetchAllInwardRecordPages().finally(() => {
       });
     }
-  }, [inwardRecordId]);
+  }, [inwardRecordId, fetchAllInwardRecordPages]);
 
-  // Construct inward record object for compatibility
   const inwardRecord = useMemo(() => {
     if (!inwardRecordMeta) return null;
     return {
@@ -1127,7 +1139,6 @@ export default function AddSupplyDeliveryForm({
     };
   }, [inwardRecordMeta, allInwardItems]);
 
-  // Step 3: Fetch default product mappings for autofill
   const { data: defaultMappingsData } = useQuery({
     queryKey: ["defaultProductMappings", inwardRecordId],
     queryFn: () =>
@@ -1144,13 +1155,14 @@ export default function AddSupplyDeliveryForm({
   // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
   const autofillMappingsMap = useMemo(() => {
     const map = new Map<string, ProductMapping>();
+    if (paginationInProgress) return map;
     if (defaultMappingsData?.results) {
       defaultMappingsData.results.forEach((mapping) => {
         map.set(mapping.eaushadhi_drug_id, mapping);
       });
     }
     return map;
-  }, [defaultMappingsData]);
+  }, [defaultMappingsData, paginationInProgress]);
 
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
     return inwardRecord?.deliveries.find(
@@ -1166,16 +1178,12 @@ export default function AddSupplyDeliveryForm({
     }
   }, [deliveryInwardRecordIdMapping]);
 
-  // Derive inwardDate from prop or inward record
   const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
 
-  // Step 4: Prefill rows from inward record items (progressively as pages load)
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
 
     try {
-      // Items are already filtered by warehouse name from the API response
-      // No need to filter again on client side
       const filteredItems = inwardRecord.items;
 
       const newDiscrepancies: DiscrepancyItem[] = [];
@@ -1232,7 +1240,7 @@ export default function AddSupplyDeliveryForm({
             }
           }
 
-          return {
+          const row = {
             ...EMPTY_ROW(),
             record_item_id: item.id,
             product_knowledge_name: extractGenericName(item.drug_name),
@@ -1249,6 +1257,16 @@ export default function AddSupplyDeliveryForm({
             is_new_batch: true,
             suggested_base_unit_code: inferBaseUnitCode(item.drug_name),
           } as RowItem;
+
+          const cachedMapping = autofillMappingsMap.get(item.drug_id);
+          if (cachedMapping) {
+            row.product_knowledge_id = cachedMapping.product_knowledge.id;
+            row.product_knowledge_slug = cachedMapping.product_knowledge.slug;
+            row.product_knowledge_name = cachedMapping.product_knowledge.name;
+            row.product_mapping_id = cachedMapping.id;
+          }
+
+          return row;
         })
         .filter((row): row is RowItem => row !== null && row.pack_qty > 0);
 
@@ -1259,7 +1277,7 @@ export default function AddSupplyDeliveryForm({
       console.error("Error prefilling data:", err);
       setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t]);
+  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t, autofillMappingsMap]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -1283,20 +1301,17 @@ export default function AddSupplyDeliveryForm({
       },
     });
 
-  // ✅ CHANGE 3️⃣: REPLACE MUTATION WITH MANUAL FUNCTION
   const recordDeliveries = async (payload: {
     inward_record_id: string;
     facility_id: string;
     delivery_order_id: string;
   }) => {
-    // ✅ Step 1: Check if already in URL params
     const existingId = getRecordDeliveryIdFromUrl();
     if (existingId) {
       console.log("✓ Using recordDeliveryId from URL params:", existingId);
       return { id: existingId };
     }
 
-    // ✅ Step 2: If not in URL, make POST call
     try {
       const response = await request<{ id: string }>(
         `/api/care_eaushadhi/record-deliveries/`,
@@ -1304,7 +1319,6 @@ export default function AddSupplyDeliveryForm({
         payload,
       );
 
-      // ✅ Step 3: Add to URL params for persistence
       addRecordDeliveryIdToUrl(response.id);
       console.log("✓ Created and cached recordDeliveryId in URL:", response.id);
 
@@ -1444,8 +1458,6 @@ export default function AddSupplyDeliveryForm({
     setIsProcessing(true);
 
     try {
-      // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
-      // ✅ CHANGE 4️⃣: UPDATED CONDITION AND ADDED TRY-CATCH
       if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && !recordDeliveryId.current) {
         try {
           const response = await recordDeliveries({
@@ -1550,17 +1562,6 @@ export default function AddSupplyDeliveryForm({
     }
   }
 
-  if (inwardRecordId && isLoadingInward) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border border-gray-200 border-t-gray-900" />
-        <p className="text-sm font-medium text-gray-700">
-          {t("supply_form_loading_inward_record")}
-        </p>
-      </div>
-    );
-  }
-
   if (prefillError) {
     return (
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 flex gap-3">
@@ -1598,25 +1599,19 @@ export default function AddSupplyDeliveryForm({
           variant="outline"
           onClick={async () => {
             try {
-              // 1. Trigger backend to fetch new data from eAushadhi
               await initiateInwardFetch(true);
               toast.success(t("supply_form_refresh_success"));
               
-              // 2. Reset pagination state for fresh fetch
-              setAllInwardItems([]);        // Clear accumulated items
-              setInwardRecordMeta(null);    // Clear metadata
-              setPaginationInProgress(true);  // Start pagination
-              paginationOffsetRef.current = 0; // Reset offset
+              setAllInwardItems([]);        
+              setInwardRecordMeta(null);    
+              setPaginationInProgress(true);  
+              initializationRef.current = false;
               
-              // 3. Start fresh pagination from page 0
-              setIsLoadingInward(true);
-              fetchInwardRecordPage(0).finally(() => {
-                setIsLoadingInward(false);
+              fetchAllInwardRecordPages().finally(() => {  
               });
             } catch (error) {
               console.error("Failed to refresh inward data:", error);
               toast.error(t("supply_form_refresh_error"));
-              // Reset pagination on error
               setPaginationInProgress(false);
             }
           }}
@@ -1693,18 +1688,38 @@ export default function AddSupplyDeliveryForm({
           </tbody>
         </table>
       </div>
+
+      {/* ✅ PAGINATION LOADER AT BOTTOM
+      {paginationInProgress && (
+        <div className="flex items-center justify-center gap-2 py-4 bg-blue-50 rounded-md border border-blue-100">
+          <div className="animate-spin rounded-full h-5 w-5 border border-blue-200 border-t-blue-600" />
+          <p className="text-sm text-blue-700 font-medium">
+            Loading items from eAushadhi... {allInwardItems.length} items loaded
+          </p>
+        </div>
+      )} */}
+
       <div className="flex items-center justify-end">
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => setRows([])}
+            onClick={handleCancel}
             disabled={isProcessing}
           >
             {t("supply_form_cancel")}
           </Button>
-          <Button onClick={handleSave} disabled={isProcessing}>
-            {isProcessing ? t("supply_form_saving") : t("supply_form_save")}
+
+          <Button 
+            onClick={handleSave} 
+            disabled={isProcessing || paginationInProgress}
+          >
+            {isProcessing 
+              ? t("supply_form_saving") 
+              : paginationInProgress
+                ? t("supply_form_loading_items")
+                : t("supply_form_save")}
           </Button>
+
         </div>
       </div>
 
