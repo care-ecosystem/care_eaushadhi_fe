@@ -8,6 +8,7 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -546,6 +547,7 @@ function ProductMappingSelector({
   eaushadhiDrugId,
   eaushadhiDrugName,
   value,
+  selectedLabel,
   isLoading,
   onSelect,
   suggestedBaseUnitCode,
@@ -556,6 +558,7 @@ function ProductMappingSelector({
   eaushadhiDrugId: string;
   eaushadhiDrugName: string;
   value: string;
+  selectedLabel?: string;
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
@@ -564,65 +567,55 @@ function ProductMappingSelector({
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const { meta } = useInstituteMapping();
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
-  const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
-  const [canCreate, setCanCreate] = useState<boolean>(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+
+  const mappingsQueryKey = ["productMappingsSearch", facilityId, eaushadhiDrugId];
+
+  const mappingsQueryFn = useCallback(
+    () =>
+      request<{ results: ProductMapping[]; can_create: boolean }>(
+        `/api/care_eaushadhi/product-mappings/search/`,
+        HttpMethod.GET,
+        { facility_id: facilityId, eaushadhi_drug_id: eaushadhiDrugId },
+      ),
+    [facilityId, eaushadhiDrugId],
+  );
+
+  const { data: mappingsData, isFetching: isSearching } = useQuery({
+    queryKey: mappingsQueryKey,
+    queryFn: mappingsQueryFn,
+    enabled: !!eaushadhiDrugId && isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const searchResults = mappingsData?.results ?? [];
+  const canCreate = mappingsData?.can_create ?? false;
+
+  const prefetchMappings = useCallback(() => {
+    if (!eaushadhiDrugId) return;
+    queryClient.prefetchQuery({
+      queryKey: mappingsQueryKey,
+      queryFn: mappingsQueryFn,
+      staleTime: 5 * 60 * 1000,
+    });
+  }, [queryClient, mappingsQueryKey, mappingsQueryFn, eaushadhiDrugId]);
 
   // Initialize with autofill mapping if available
   useEffect(() => {
     if (
       autofillMapping &&
-      eaushadhiDrugId === autofillMapping.eaushadhi_drug_id
+      eaushadhiDrugId === autofillMapping.eaushadhi_drug_id &&
+      !value
     ) {
-      if (!hasFetched) {
-        setSearchResults([autofillMapping]);
-      }
-      if (!value) {
-        onSelect(autofillMapping);
-      }
+      onSelect(autofillMapping);
     }
   }, [autofillMapping, eaushadhiDrugId, value, onSelect]);
 
-  // Fetch product mappings when dropdown opens (search behavior)
-  const fetchMappings = useCallback(async (): Promise<ProductMapping[]> => {
-    if (!eaushadhiDrugId || isSearching) return [];
-
-    setIsSearching(true);
-    setCanCreate(false);
-    try {
-      const response = await request<{
-        results: ProductMapping[];
-        can_create: boolean;
-      }>(`/api/care_eaushadhi/product-mappings/search/`, HttpMethod.GET, {
-        facility_id: facilityId,
-        eaushadhi_drug_id: eaushadhiDrugId,
-      });
-      setSearchResults(response.results || []);
-      setCanCreate(response.can_create ?? false);
-      return response.results || [];
-    } catch (err) {
-      console.error("Error fetching product mappings:", err);
-      toast.error(t("supply_form_load_products_error"));
-      setSearchResults([]);
-      setCanCreate(false);
-      return [];
-    } finally {
-      setIsSearching(false);
-    }
-  }, [facilityId, eaushadhiDrugId, isSearching, t]);
-
-  // Fetch mappings when dropdown opens
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open && !hasFetched && !isSearching) {
-      fetchMappings();
-      setHasFetched(true);
-    }
   };
-
 
   return (
     <>
@@ -640,7 +633,12 @@ function ProductMappingSelector({
         disabled={isLoading || !eaushadhiDrugId}
         modal={false}
       >
-        <SelectTrigger size="sm" className="w-full">
+        <SelectTrigger
+          size="sm"
+          className="w-full"
+          onPointerEnter={prefetchMappings}
+          onFocus={prefetchMappings}
+        >
           <SelectValue
             placeholder={
               !eaushadhiDrugId
@@ -649,7 +647,9 @@ function ProductMappingSelector({
                   ? t("supply_form_loading")
                   : t("supply_form_select_product")
             }
-          />
+          >
+            {value ? selectedLabel || t("supply_form_select_product") : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent
           position="popper"
@@ -743,9 +743,11 @@ function ProductMappingSelector({
         suggestedBaseUnitCode={suggestedBaseUnitCode}
         suggestedName={suggestedName}
         onCreated={async (mapping) => {
-          setSearchResults([]);
-          const results = await fetchMappings();
-          const realMapping = results.find(
+          const refreshed = await queryClient.fetchQuery({
+            queryKey: mappingsQueryKey,
+            queryFn: mappingsQueryFn,
+          });
+          const realMapping = refreshed?.results?.find(
             (m) => m.product_knowledge.id === mapping.product_knowledge.id,
           );
           if (realMapping) onSelect(realMapping);
@@ -755,9 +757,31 @@ function ProductMappingSelector({
   );
 }
 
+function getGridTemplateColumns(
+  allowUpdatingQuantity: boolean,
+  allowDeletingInward: boolean,
+): string {
+  const cols = ["minmax(280px, 1fr)", "150px", "150px", "96px", "96px"];
+  if (allowUpdatingQuantity) cols.push("128px");
+  cols.push("128px");
+  if (allowDeletingInward) cols.push("64px");
+  return cols.join(" ");
+}
+
+function getMinTableWidth(
+  allowUpdatingQuantity: boolean,
+  allowDeletingInward: boolean,
+): number {
+  let total = 280 + 150 + 150 + 96 + 96;
+  if (allowUpdatingQuantity) total += 128;
+  total += 128;
+  if (allowDeletingInward) total += 64;
+  return total;
+}
+
 // ─── Delivery Row ──────────────────────────────────────────────────────────
-// ─── Delivery Row ──────────────────────────────────────────────────────────
-function DeliveryRowImpl({
+
+function DeliveryRowCellsImpl({
   facilityId,
   row,
   updateRow,
@@ -808,14 +832,15 @@ function DeliveryRowImpl({
   };
 
   return (
-    <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
-      <td className="px-2 py-2 min-w-[280px] max-w-[400px]">
+    <>
+      <div className="px-2 py-2 overflow-hidden border-r border-gray-100">
         <div className="flex flex-col gap-1">
           <ProductMappingSelector
             facilityId={facilityId}
             eaushadhiDrugId={row.eaushadhi_drug_id || ""}
             eaushadhiDrugName={row.eaushadhi_drug_name || ""}
             value={row.product_mapping_id || ""}
+            selectedLabel={row.product_knowledge_name}
             isLoading={false}
             onSelect={handleSelectMapping}
             suggestedBaseUnitCode={row.suggested_base_unit_code}
@@ -828,8 +853,8 @@ function DeliveryRowImpl({
             </span>
           )}
         </div>
-      </td>
-      <td className="px-2 py-2 shrink-0 min-w-[150px]">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="text"
           value={row.batch_number}
@@ -837,8 +862,8 @@ function DeliveryRowImpl({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 min-w-[150px]">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="date"
           value={row.expiry_date}
@@ -846,8 +871,8 @@ function DeliveryRowImpl({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 w-24">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="number"
           min={1}
@@ -864,8 +889,8 @@ function DeliveryRowImpl({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 w-24">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="number"
           min={1}
@@ -881,30 +906,27 @@ function DeliveryRowImpl({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      {
-        allowUpdatingQuantity && 
-        (
-          <td className="px-2 py-2 shrink-0 w-32">
-            <Input
-              type="number"
-              min={0}
-              value={row.accepted_pack_qty}
-              onChange={(e) => {
-                const accepted_pack_qty = parseInt(e.target.value) || 0;
-                onChange({
-                  ...row,
-                  accepted_pack_qty,
-                  accepted_qty_in_units: String((row.pack_size || 1) * accepted_pack_qty),
-                });
-              }}
-              className="h-9 text-xs w-full"
-              disabled={!allowUpdatingQuantity}
-            />
-          </td>
-        )
-      }
-      <td className="px-2 py-2 shrink-0 w-32">
+      </div>
+      {allowUpdatingQuantity && (
+        <div className="px-2 py-2 border-r border-gray-100">
+          <Input
+            type="number"
+            min={0}
+            value={row.accepted_pack_qty}
+            onChange={(e) => {
+              const accepted_pack_qty = parseInt(e.target.value) || 0;
+              onChange({
+                ...row,
+                accepted_pack_qty,
+                accepted_qty_in_units: String((row.pack_size || 1) * accepted_pack_qty),
+              });
+            }}
+            className="h-9 text-xs w-full"
+            disabled={!allowUpdatingQuantity}
+          />
+        </div>
+      )}
+      <div className={`px-2 py-2 ${allowDeletingInward ? "border-r border-gray-100" : ""}`}>
         <div className="flex flex-col gap-1">
           <Input
             type="number"
@@ -918,22 +940,22 @@ function DeliveryRowImpl({
             </span>
           )}
         </div>
-      </td>
+      </div>
       {allowDeletingInward && (
-        <td className="px-2 py-2 shrink-0 w-16">
+        <div className="px-2 py-2">
           <button
             onClick={onRemove}
             className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
           >
             <Trash2 className="size-4" />
           </button>
-        </td>
+        </div>
       )}
-    </tr>
+    </>
   );
 }
 
-const DeliveryRow = memo(DeliveryRowImpl, (prev, next) => {
+const DeliveryRowCells = memo(DeliveryRowCellsImpl, (prev, next) => {
   return (
     prev.row === next.row &&
     prev.autofillMapping === next.autofillMapping &&
@@ -943,6 +965,7 @@ const DeliveryRow = memo(DeliveryRowImpl, (prev, next) => {
     prev.removeRow === next.removeRow
   );
 });
+
 // ─── Main Form ─────────────────────────────────────────────────────────────
 export default function AddSupplyDeliveryForm({
   facilityId,
@@ -1659,96 +1682,191 @@ export default function AddSupplyDeliveryForm({
   }
 
   return (
-    <div className="space-y-4" style={{ scrollbarGutter: "stable" }}>
-      <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
-        <table className="w-full text-sm border-collapse">
-          <thead className="bg-gray-100">
-            <tr className="divide-x divide-gray-200">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[280px] max-w-[400px]">
-                {t("supply_form_col_product")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                {t("supply_form_col_batch")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                {t("supply_form_col_expiry")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                {t("supply_form_col_pack_size")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                {t("supply_form_col_pack_qty")}
-              </th>
-              {
-                meta?.allow_updating_quantity_after_received &&
-                (
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                    {t("supply_form_col_accepted_pack_qty")}
-                  </th>
-                )
-              }
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                {t("supply_form_col_qty_in_units")}
-              </th>
-              {(meta?.allow_deleting_inward_after_fetch ?? false) && (
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
-                  {t("supply_form_col_actions")}
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map((row) => (
-              <DeliveryRow
-                key={row.record_item_id}
-                facilityId={facilityId}
-                row={row}
-                updateRow={updateRow}
-                removeRow={removeRow}
-                allowDeletingInward={
-                  meta?.allow_deleting_inward_after_fetch ?? false
-                }
-                allowUpdatingQuantity={
-                  meta?.allow_updating_quantity_after_received ?? false
-                }
-                autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <VirtualizedDeliveryTable
+      rows={rows}
+      facilityId={facilityId}
+      updateRow={updateRow}
+      removeRow={removeRow}
+      allowDeletingInward={meta?.allow_deleting_inward_after_fetch ?? false}
+      allowUpdatingQuantity={meta?.allow_updating_quantity_after_received ?? false}
+      autofillMappingsMap={autofillMappingsMap}
+      isProcessing={isProcessing}
+      paginationInProgress={paginationInProgress}
+      onCancel={handleCancel}
+      onSave={handleSave}
+      t={t}
+      discrepancies={discrepancies}
+      setDiscrepancies={setDiscrepancies}
+      isMarkingErrors={isMarkingErrors}
+      isMarkingAccepted={isMarkingAccepted}
+      onMarkDiscrepanciesAsAccepted={handleMarkDiscrepanciesAsAccepted}
+      onMarkDiscrepanciesAsError={handleMarkDiscrepanciesAsError}
+    />
+  );
+}
 
-      {/* ✅ PAGINATION LOADER AT BOTTOM
-      {paginationInProgress && (
-        <div className="flex items-center justify-center gap-2 py-4 bg-blue-50 rounded-md border border-blue-100">
-          <div className="animate-spin rounded-full h-5 w-5 border border-blue-200 border-t-blue-600" />
-          <p className="text-sm text-blue-700 font-medium">
-            Loading items from eAushadhi... {allInwardItems.length} items loaded
-          </p>
+// ─── Virtualized Table (CSS-grid based — header and rows share one layout) ─
+function VirtualizedDeliveryTable({
+  rows,
+  facilityId,
+  updateRow,
+  removeRow,
+  allowDeletingInward,
+  allowUpdatingQuantity,
+  autofillMappingsMap,
+  isProcessing,
+  paginationInProgress,
+  onCancel,
+  onSave,
+  t,
+  discrepancies,
+  setDiscrepancies,
+  isMarkingErrors,
+  isMarkingAccepted,
+  onMarkDiscrepanciesAsAccepted,
+  onMarkDiscrepanciesAsError,
+}: {
+  rows: RowItem[];
+  facilityId: string;
+  updateRow: (id: string, updated: RowItem) => void;
+  removeRow: (id: string) => void;
+  allowDeletingInward: boolean;
+  allowUpdatingQuantity: boolean;
+  autofillMappingsMap: Map<string, ProductMapping>;
+  isProcessing: boolean;
+  paginationInProgress: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  t: (key: string, opts?: any) => string;
+  discrepancies: DiscrepancyItem[];
+  setDiscrepancies: (d: DiscrepancyItem[]) => void;
+  isMarkingErrors: boolean;
+  isMarkingAccepted: boolean;
+  onMarkDiscrepanciesAsAccepted: () => void;
+  onMarkDiscrepanciesAsError: () => void;
+}) {
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => 76,
+    overscan: 10,
+  });
+
+  const gridTemplateColumns = getGridTemplateColumns(allowUpdatingQuantity, allowDeletingInward);
+  const minTableWidth = getMinTableWidth(allowUpdatingQuantity, allowDeletingInward);
+
+  return (
+    <div className="space-y-4" style={{ scrollbarGutter: "stable" }}>
+      <div
+        ref={tableScrollRef}
+        className="rounded-md border border-gray-200 overflow-y-auto overflow-x-auto bg-white shadow-sm"
+        style={{ maxHeight: "70vh" }}
+      >
+        <div
+          className="sticky top-0 z-10 bg-gray-100 border-b border-gray-200"
+          style={{ minWidth: `${minTableWidth}px`, width: "100%" }}
+        >
+          <div
+            className="grid"
+            style={{ gridTemplateColumns }}
+          >
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_product")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_batch")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_expiry")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_pack_size")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_pack_qty")}
+            </div>
+            {allowUpdatingQuantity && (
+              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+                {t("supply_form_col_accepted_pack_qty")}
+              </div>
+            )}
+            <div
+              className={`px-3 py-2 text-left text-xs font-semibold text-gray-700 ${
+                allowDeletingInward ? "border-r border-gray-200" : ""
+              }`}
+            >
+              {t("supply_form_col_qty_in_units")}
+            </div>
+            {allowDeletingInward && (
+              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                {t("supply_form_col_actions")}
+              </div>
+            )}
+          </div>
         </div>
-      )} */}
+
+        <div style={{ minWidth: `${minTableWidth}px`, width: "100%" }}>
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <div
+                  key={row.record_item_id}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  className="grid items-start hover:bg-gray-50/40 border-b border-gray-100"
+                  style={{
+                    gridTemplateColumns,
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <DeliveryRowCells
+                    facilityId={facilityId}
+                    row={row}
+                    updateRow={updateRow}
+                    removeRow={removeRow}
+                    allowDeletingInward={allowDeletingInward}
+                    allowUpdatingQuantity={allowUpdatingQuantity}
+                    autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center justify-end">
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={handleCancel}
+            onClick={onCancel}
             disabled={isProcessing}
           >
             {t("supply_form_cancel")}
           </Button>
 
-          <Button 
-            onClick={handleSave} 
+          <Button
+            onClick={onSave}
             disabled={isProcessing || paginationInProgress}
           >
-            {isProcessing 
-              ? t("supply_form_saving") 
+            {isProcessing
+              ? t("supply_form_saving")
               : paginationInProgress
                 ? t("supply_form_loading_items")
                 : t("supply_form_save")}
           </Button>
-
         </div>
       </div>
 
@@ -1803,7 +1921,7 @@ export default function AddSupplyDeliveryForm({
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              onClick={handleMarkDiscrepanciesAsAccepted}
+              onClick={onMarkDiscrepanciesAsAccepted}
               disabled={isMarkingErrors || isMarkingAccepted}
             >
               {isMarkingAccepted
@@ -1812,7 +1930,7 @@ export default function AddSupplyDeliveryForm({
             </Button>
             <Button
               variant="destructive"
-              onClick={handleMarkDiscrepanciesAsError}
+              onClick={onMarkDiscrepanciesAsError}
               disabled={isMarkingErrors || isMarkingAccepted}
             >
               {isMarkingErrors
