@@ -179,6 +179,7 @@ interface DiscrepancyItem {
   pack_size: number;
   supply_delivery_ids: string[];
   record_item_delivery_ids: string[];
+  record_item_id?: string;
 }
 
 interface InwardItem {
@@ -300,6 +301,111 @@ function toSlug(value: string, maxLength: number): string {
     .trim()
     .replace(/\s+/g, "-")
     .slice(0, maxLength);
+}
+
+interface ItemAvailability {
+  packSize: number;
+  totalUnitsAvailable: number;
+  consumedUnits: number;
+  availableUnits: number;
+}
+
+function getItemAvailability(item: InwardItem): ItemAvailability {
+  const packSize = parseFloat(item.unit_pack) || 1;
+  const receivedQty = parseFloat(item.quantity_received_current) || 0;
+
+  const totalUnitsAvailable = (() => {
+    const raw = item.quantity_in_units;
+    const parsed =
+      raw !== undefined && raw !== null && raw !== "" ? parseFloat(raw) : NaN;
+    return Number.isFinite(parsed) ? parsed : receivedQty * packSize;
+  })();
+
+  const consumedUnits = item.item_deliveries.reduce((sum, delivery) => {
+    if (delivery.status === "ACCEPTED" || delivery.status === "ACCEPTED_OVERRIDE") {
+      return sum + (parseFloat(delivery.quantity_received) || 0);
+    }
+    return sum;
+  }, 0);
+
+  return {
+    packSize,
+    totalUnitsAvailable,
+    consumedUnits,
+    availableUnits: Math.max(totalUnitsAvailable - consumedUnits, 0),
+  };
+}
+
+function computeDiscrepancies(
+  items: InwardItem[],
+  deliveryOrderId: string,
+): DiscrepancyItem[] {
+  const currentRecordDeliveryId = items
+    .flatMap((it) => it.item_deliveries)
+    .find((d) => d.delivery_order_id === deliveryOrderId)?.record_delivery_id;
+
+  if (!currentRecordDeliveryId) return [];
+
+  const discrepancies: DiscrepancyItem[] = [];
+
+  items.forEach((item) => {
+    const { packSize, totalUnitsAvailable, consumedUnits } = getItemAvailability(item);
+
+    if (consumedUnits > totalUnitsAvailable) {
+      const activeDeliveries = item.item_deliveries.filter(
+        (d) =>
+          d.record_delivery_id === currentRecordDeliveryId &&
+          d.status === "ACCEPTED",
+      );
+
+      if (activeDeliveries.length > 0) {
+        discrepancies.push({
+          drug_name: item.drug_name,
+          available_qty: totalUnitsAvailable / (packSize || 1),
+          accepted_qty: consumedUnits / (packSize || 1),
+          pack_size: packSize,
+          supply_delivery_ids: activeDeliveries.map(
+            (d) => d.supply_delivery_id as string,
+          ),
+          record_item_delivery_ids: activeDeliveries.map((d) => d.id),
+        });
+      }
+    }
+  });
+
+  return discrepancies;
+}
+
+function computeInputQuantityDiscrepancies(
+  rows: RowItem[],
+  availabilityByItemId: Map<string, ItemAvailability>,
+): DiscrepancyItem[] {
+  const discrepancies: DiscrepancyItem[] = [];
+
+  rows.forEach((row) => {
+    const availability = availabilityByItemId.get(row.record_item_id);
+    if (!availability) return;
+
+    const { packSize, availableUnits } = availability;
+    const parsedEntered = parseFloat(row.accepted_qty_in_units);
+    const enteredUnits = Number.isFinite(parsedEntered)
+      ? parsedEntered
+      : (row.accepted_pack_qty || 0) * (packSize || 1);
+
+    if (enteredUnits > availableUnits) {
+      discrepancies.push({
+        drug_name: row.eaushadhi_drug_name || row.product_knowledge_name,
+        available_qty: availableUnits / (packSize || 1),
+        accepted_qty: enteredUnits / (packSize || 1),
+        pack_size: packSize,
+        supply_delivery_ids: [],
+        record_item_delivery_ids: [],
+        record_item_id: row.record_item_id,
+      });
+    }
+  });
+
+  return discrepancies;
 }
 
 // ─── Create Product Knowledge Dialog ──────────────────────────────────────────
@@ -1090,7 +1196,6 @@ export default function AddSupplyDeliveryForm({
         do {
           // Check if cancelled
           if (paginationCancelledRef.current) {
-            console.log("[Pagination] Pagination cancelled by user");
             setPaginationInProgress(false);
             return;
           }
@@ -1216,6 +1321,14 @@ export default function AddSupplyDeliveryForm({
     return map;
   }, [defaultMappingsData, paginationInProgress]);
 
+  const itemAvailabilityMap = useMemo(() => {
+    const map = new Map<string, ItemAvailability>();
+    allInwardItems.forEach((item) => {
+      map.set(item.id, getItemAvailability(item));
+    });
+    return map;
+  }, [allInwardItems]);
+
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
     if (!inwardRecordId) return undefined;
     const match = allInwardItems
@@ -1244,65 +1357,15 @@ export default function AddSupplyDeliveryForm({
     try {
       const filteredItems = inwardRecord.items;
 
-      const currentRecordDeliveryId = filteredItems
-        .flatMap((it) => it.item_deliveries)
-        .find((d) => d.delivery_order_id === deliveryOrderId)?.record_delivery_id;
-
-      const newDiscrepancies: DiscrepancyItem[] = [];
+      const newDiscrepancies = computeDiscrepancies(filteredItems, deliveryOrderId);
 
       const newRows = filteredItems
         .map((item) => {
           const expiryDate = item.expiry_date
             ? item.expiry_date.split("T")[0]
             : "";
-          const packSize = parseFloat(item.unit_pack) || 1;
-          const receivedQty = parseFloat(item.quantity_received_current) || 0;
-
-          const totalUnitsAvailable = (() => {
-            const raw = item.quantity_in_units;
-            const parsed =
-              raw !== undefined && raw !== null && raw !== ""
-                ? parseFloat(raw)
-                : NaN;
-            return Number.isFinite(parsed) ? parsed : receivedQty * packSize;
-          })();
-
-          const totalConsumedUnits = item.item_deliveries.reduce(
-            (consumedUnits, delivery) => {
-              if (
-                delivery.status === "ACCEPTED" ||
-                delivery.status === "ACCEPTED_OVERRIDE"
-              ) {
-                return consumedUnits + (parseFloat(delivery.quantity_received) || 0);
-              }
-              return consumedUnits;
-            },
-            0,
-          );
-
-          const availableUnits = Math.max(totalUnitsAvailable - totalConsumedUnits, 0);
+          const { packSize, availableUnits } = getItemAvailability(item);
           const availableQty = packSize > 0 ? availableUnits / packSize : availableUnits;
-
-          if (totalConsumedUnits > totalUnitsAvailable && currentRecordDeliveryId) {
-            const activeDeliveries = item.item_deliveries.filter(
-              (d) =>
-                d.record_delivery_id === currentRecordDeliveryId &&
-                d.status === "ACCEPTED",
-            );
-
-            if (activeDeliveries.length > 0) {
-              newDiscrepancies.push({
-                drug_name: item.drug_name,
-                available_qty: totalUnitsAvailable / (packSize || 1),
-                accepted_qty: totalConsumedUnits / (packSize || 1),
-                pack_size: packSize,
-                supply_delivery_ids: activeDeliveries.map(
-                  (d) => d.supply_delivery_id as string,
-                ),
-                record_item_delivery_ids: activeDeliveries.map((d) => d.id),
-              });
-            }
-          }
 
           const row = {
             ...EMPTY_ROW(),
@@ -1403,38 +1466,175 @@ export default function AddSupplyDeliveryForm({
     }
   };
 
+  async function saveRows(
+    rowsToSave: RowItem[],
+    statusOverrides?: Map<string, "ACCEPTED_OVERRIDE" | "SOURCE_REVERSED">,
+  ) {
+    if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && !recordDeliveryId.current) {
+      const response = await recordDeliveries({
+        inward_record_id: inwardRecordId,
+        facility_id: facilityId,
+        delivery_order_id: deliveryOrderId,
+      });
+      recordDeliveryId.current = response.id;
+      console.log("✓ Got recordDeliveryId:", response.id);
+    }
+
+    if (!recordDeliveryId.current) {
+      throw new Error(t("supply_form_missing_record_delivery_ref"));
+    }
+
+    const deliveryInputs: RowDeliveryInput[] = rowsToSave.map((row) => ({
+      productKnowledgeSlug: row.product_knowledge_slug,
+      productKnowledgeName: row.product_knowledge_name,
+      chargeItemCategorySlug: row.charge_item_category_slug,
+      batchNumber: row.batch_number,
+      expiryDate: row.expiry_date,
+      packSize: row.pack_size,
+      packQty: row.accepted_pack_qty,
+      quantity: row.accepted_qty_in_units,
+      purchasePrice: "0",
+      recordItemId: row.record_item_id,
+      existingProductId: row.supplied_item_id || undefined,
+      isNewBatch: row.is_new_batch,
+      deliveryStatus: statusOverrides?.get(row.record_item_id) ?? "ACCEPTED",
+    }));
+
+    const chunks = chunkRows(deliveryInputs);
+
+    const ctx: RowDeliveryBatchContext = {
+      facilityId,
+      destination,
+      deliveryOrderId,
+      recordDeliveryId: recordDeliveryId.current,
+      eaushadhiProductKnowledgeId: rowsToSave[0]?.product_knowledge_id || "",
+    };
+
+    for (const chunk of chunks) {
+      const payload = buildChainBatch(chunk, ctx);
+      const results = await runSuperBatch(payload);
+      const chainResults = extractChainResults(results);
+
+      for (const result of chainResults) {
+        if (result.errors.length > 0) {
+          throw new Error(
+            `Chain ${result.chainId} failed: ${result.errors.join("; ")}`,
+          );
+        }
+      }
+
+      const overridePatches: Promise<unknown>[] = [];
+      chunk.forEach((input, chainIdx) => {
+        const overrideStatus = input.deliveryStatus;
+        if (!overrideStatus || overrideStatus === "ACCEPTED") return;
+
+        const chainResult = chainResults.find((r) => r.chainId === chainIdx);
+        const inwardItemId = chainResult?.inwardItemId;
+        if (inwardItemId) {
+          overridePatches.push(
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${inwardItemId}/`,
+              HttpMethod.PATCH,
+              { status: overrideStatus },
+            ),
+          );
+        } else {
+          console.warn(
+            `saveRows: could not resolve inwardItemId for chain ${chainIdx} to apply status override "${overrideStatus}"`,
+          );
+        }
+      });
+
+      if (overridePatches.length > 0) {
+        await Promise.all(overridePatches);
+      }
+    }
+  }
+
+  function reportSaveError(err: unknown) {
+    if (err instanceof SuperBatchError) {
+      const errorDetails = extractErrorDetailsFromSuperBatch(err.results);
+
+      if (errorDetails.length > 0) {
+        const errorMessage = formatErrorMessage(errorDetails, t);
+        toast.error(errorMessage);
+      } else {
+        const firstFailed = err.failed?.[0];
+        toast.error(
+          `Failed: ${(firstFailed?.data as any)?.detail ??
+          firstFailed?.status_code ??
+          t("supply_form_unexpected_error")
+          }`,
+        );
+      }
+
+      console.error("SuperBatchError details:", {
+        results: err.results,
+        failed: err.failed,
+        status: err.status,
+      });
+    } else if (err instanceof Error) {
+      toast.error(err.message);
+    } else {
+      console.error(err);
+      toast.error(t("supply_form_unexpected_error"));
+    }
+  }
+
+  function refreshCachedInwardItems() {
+    setAllInwardItems([]);
+    setInwardRecordMeta(null);
+    initializationRef.current = false;
+    setPaginationInProgress(true);
+    fetchAllInwardRecordPages().finally(() => {});
+  }
+
   async function handleMarkDiscrepanciesAsError() {
-    const allSupplyDeliveryIds = discrepancies.flatMap(
-      (d) => d.supply_delivery_ids,
-    );
-    const allRecordItemDeliveryIds = discrepancies.flatMap(
-      (d) => d.record_item_delivery_ids,
-    );
+    const historical = discrepancies.filter((d) => !d.record_item_id);
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
+
+    const allSupplyDeliveryIds = historical.flatMap((d) => d.supply_delivery_ids);
+    const allRecordItemDeliveryIds = historical.flatMap((d) => d.record_item_delivery_ids);
+
     if (
       allSupplyDeliveryIds.length === 0 &&
-      allRecordItemDeliveryIds.length === 0
+      allRecordItemDeliveryIds.length === 0 &&
+      inputOnly.length === 0
     ) {
       setDiscrepancies([]);
       return;
     }
+
     setIsMarkingErrors(true);
     try {
-      await Promise.all([
-        ...allSupplyDeliveryIds.map((id) =>
-          request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
-            status: "entered_in_error",
-          }),
-        ),
-        ...allRecordItemDeliveryIds.map((id) =>
-          request(
-            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
-            HttpMethod.PATCH,
-            { status: "SOURCE_REVERSED" },
+      if (allSupplyDeliveryIds.length > 0 || allRecordItemDeliveryIds.length > 0) {
+        await Promise.all([
+          ...allSupplyDeliveryIds.map((id) =>
+            request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
+              status: "entered_in_error",
+            }),
           ),
-        ),
-      ]);
+          ...allRecordItemDeliveryIds.map((id) =>
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+              HttpMethod.PATCH,
+              { status: "SOURCE_REVERSED" },
+            ),
+          ),
+        ]);
+      }
+
+      if (inputOnly.length > 0) {
+        const overrideMap = new Map<string, "SOURCE_REVERSED">();
+        inputOnly.forEach((d) => {
+          if (d.record_item_id) overrideMap.set(d.record_item_id, "SOURCE_REVERSED");
+        });
+        await saveRows(rows, overrideMap);
+      }
+
       toast.success(t("supply_form_marked_as_error_success"));
       setDiscrepancies([]);
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["inwardRecord", inwardRecordId],
@@ -1443,7 +1643,14 @@ export default function AddSupplyDeliveryForm({
           queryKey: ["supplyDeliveries", deliveryOrderId],
         }),
       ]);
-    } catch {
+
+      if (inputOnly.length > 0) {
+        setRows([]);
+        refreshCachedInwardItems();
+        onSuccess();
+      }
+    } catch (err) {
+      reportSaveError(err);
       toast.error(t("supply_form_marked_as_error_failure"));
     } finally {
       setIsMarkingErrors(false);
@@ -1451,32 +1658,46 @@ export default function AddSupplyDeliveryForm({
   }
 
   async function handleMarkDiscrepanciesAsAccepted() {
-    const allSupplyDeliveryIds = discrepancies.flatMap(
-      (d) => d.supply_delivery_ids,
-    );
-    const allRecordItemDeliveryIds = discrepancies.flatMap(
-      (d) => d.record_item_delivery_ids,
-    );
+    const historical = discrepancies.filter((d) => !d.record_item_id);
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
+
+    const allSupplyDeliveryIds = historical.flatMap((d) => d.supply_delivery_ids);
+    const allRecordItemDeliveryIds = historical.flatMap((d) => d.record_item_delivery_ids);
+
     if (
       allSupplyDeliveryIds.length === 0 &&
-      allRecordItemDeliveryIds.length === 0
+      allRecordItemDeliveryIds.length === 0 &&
+      inputOnly.length === 0
     ) {
       setDiscrepancies([]);
       return;
     }
+
     setIsMarkingAccepted(true);
     try {
-      await Promise.all([
-        ...allRecordItemDeliveryIds.map((id) =>
-          request(
-            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
-            HttpMethod.PATCH,
-            { status: "ACCEPTED_OVERRIDE" },
+      if (allRecordItemDeliveryIds.length > 0) {
+        await Promise.all(
+          allRecordItemDeliveryIds.map((id) =>
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+              HttpMethod.PATCH,
+              { status: "ACCEPTED_OVERRIDE" },
+            ),
           ),
-        ),
-      ]);
+        );
+      }
+
+      if (inputOnly.length > 0) {
+        const overrideMap = new Map<string, "ACCEPTED_OVERRIDE">();
+        inputOnly.forEach((d) => {
+          if (d.record_item_id) overrideMap.set(d.record_item_id, "ACCEPTED_OVERRIDE");
+        });
+        await saveRows(rows, overrideMap);
+      }
+
       toast.success(t("supply_form_marked_as_accepted_success"));
       setDiscrepancies([]);
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["inwardRecord", inwardRecordId],
@@ -1485,7 +1706,14 @@ export default function AddSupplyDeliveryForm({
           queryKey: ["supplyDeliveries", deliveryOrderId],
         }),
       ]);
-    } catch {
+
+      if (inputOnly.length > 0) {
+        setRows([]);
+        refreshCachedInwardItems();
+        onSuccess();
+      }
+    } catch (err) {
+      reportSaveError(err);
       toast.error(t("supply_form_marked_as_accepted_failure"));
     } finally {
       setIsMarkingAccepted(false);
@@ -1519,108 +1747,28 @@ export default function AddSupplyDeliveryForm({
 
     if (!validate()) return;
 
+    const historicalDiscrepancies = computeDiscrepancies(allInwardItems, deliveryOrderId);
+    const inputDiscrepancies = computeInputQuantityDiscrepancies(rows, itemAvailabilityMap);
+    const preSaveDiscrepancies = [...historicalDiscrepancies, ...inputDiscrepancies];
+    if (preSaveDiscrepancies.length > 0) {
+      setDiscrepancies(preSaveDiscrepancies);
+      toast.error(t("supply_form_discrepancy_title"));
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && !recordDeliveryId.current) {
-        try {
-          const response = await recordDeliveries({
-            inward_record_id: inwardRecordId,
-            facility_id: facilityId,
-            delivery_order_id: deliveryOrderId,
-          });
-
-          recordDeliveryId.current = response.id;
-          console.log("✓ Got recordDeliveryId:", response.id);
-        } catch (err) {
-          console.error("Failed to get recordDeliveryId:", err);
-          throw err;
-        }
-      }
-
-      if (!recordDeliveryId.current) {
-        toast.error(t("supply_form_missing_record_delivery_ref"));
-        return;
-      }
-
-      // Step 1: Convert RowItem[] to RowDeliveryInput[]
-      const deliveryInputs: RowDeliveryInput[] = rows.map((row) => ({
-        productKnowledgeSlug: row.product_knowledge_slug,
-        productKnowledgeName: row.product_knowledge_name,
-        chargeItemCategorySlug: row.charge_item_category_slug,
-        batchNumber: row.batch_number,
-        expiryDate: row.expiry_date,
-        packSize: row.pack_size,
-        packQty: row.accepted_pack_qty,
-        quantity: row.accepted_qty_in_units,
-        purchasePrice: "0",
-        recordItemId: row.record_item_id,
-        existingProductId: row.supplied_item_id || undefined,
-        isNewBatch: row.is_new_batch,
-      }));
-
-      // Step 2: Split rows into chunks
-      const chunks = chunkRows(deliveryInputs);
-
-      // Step 3: Create shared context
-      const ctx: RowDeliveryBatchContext = {
-        facilityId,
-        destination,
-        deliveryOrderId,
-        recordDeliveryId: recordDeliveryId.current,
-        eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
-      };
-
-      // Step 4: Process each chunk
-      for (const chunk of chunks) {
-        const payload = buildChainBatch(chunk, ctx);
-        const results = await runSuperBatch(payload);
-        const chainResults = extractChainResults(results);
-
-        // Check for errors
-        for (const result of chainResults) {
-          if (result.errors.length > 0) {
-            throw new Error(
-              `Chain ${result.chainId} failed: ${result.errors.join("; ")}`,
-            );
-          }
-        }
-      }
+      await saveRows(rows);
 
       toast.success(t("supply_form_save_success"));
       setRows([]);
+
+      refreshCachedInwardItems();
+
       onSuccess();
     } catch (err) {
-      if (err instanceof SuperBatchError) {
-        // Extract detailed validation errors from nested response structure
-        const errorDetails = extractErrorDetailsFromSuperBatch(err.results);
-
-        if (errorDetails.length > 0) {
-          // Show detailed error message with field names
-          const errorMessage = formatErrorMessage(errorDetails, t);
-          toast.error(errorMessage);
-        } else {
-          // Fallback: show first failed result's status code
-          const firstFailed = err.failed?.[0];
-          toast.error(
-            `Failed: ${(firstFailed?.data as any)?.detail ??
-            firstFailed?.status_code ??
-            t("supply_form_unexpected_error")
-            }`,
-          );
-        }
-
-        console.error("SuperBatchError details:", {
-          results: err.results,
-          failed: err.failed,
-          status: err.status,
-        });
-      } else if (err instanceof Error) {
-        toast.error(err.message);
-      } else {
-        console.error(err);
-        toast.error(t("supply_form_unexpected_error"));
-      }
+      reportSaveError(err);
     } finally {
       setIsProcessing(false);
     }
@@ -1871,7 +2019,7 @@ function VirtualizedDeliveryTable({
 
           <Button
             onClick={onSave}
-            disabled={isProcessing || paginationInProgress}
+            disabled={isProcessing || paginationInProgress || discrepancies.length > 0}
           >
             {isProcessing
               ? t("supply_form_saving")

@@ -49,6 +49,7 @@ export type InstituteMapping = {
   supplier_mappings: SupplierMapping[];
 };
 
+export type DeliveryStatus = "ACCEPTED" | "ACCEPTED_OVERRIDE" | "SOURCE_REVERSED";
 
 /** Page-level context shared by every row in one Save. */
 export interface RowDeliveryBatchContext {
@@ -75,6 +76,7 @@ export interface RowDeliveryInput {
   /** If the row already maps to an existing product (not a new batch). */
   existingProductId?: string;
   isNewBatch: boolean;
+  deliveryStatus?: DeliveryStatus;
 }
 
 /**
@@ -150,6 +152,7 @@ export function buildRowDeliveryBatch(
       product_id: reuseExistingProduct ? input.existingProductId : null,
       product_knowledge_id: ctx.eaushadhiProductKnowledgeId,
       quantity_received: Number(input.quantity) || 0,
+      status: input.deliveryStatus ?? "ACCEPTED",
     },
     replacements: [
       {
