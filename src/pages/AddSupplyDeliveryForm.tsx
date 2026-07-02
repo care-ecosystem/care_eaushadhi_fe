@@ -169,6 +169,7 @@ interface ItemDelivery {
   quantity_received: string;
   supply_delivery_id?: string;
   record_delivery_id?: string;
+  delivery_order_id?: string;
 }
 
 interface DiscrepancyItem {
@@ -1216,12 +1217,17 @@ export default function AddSupplyDeliveryForm({
   }, [defaultMappingsData, paginationInProgress]);
 
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
-    return inwardRecord?.deliveries.find(
-      (d) =>
-        d.inward_record_id === inwardRecordId &&
-        d.delivery_order_id === deliveryOrderId,
-    );
-  }, [inwardRecordId, deliveryOrderId, inwardRecord]);
+    if (!inwardRecordId) return undefined;
+    const match = allInwardItems
+      .flatMap((item) => item.item_deliveries)
+      .find((d) => d.delivery_order_id === deliveryOrderId);
+    if (!match?.record_delivery_id) return undefined;
+    return {
+      id: match.record_delivery_id,
+      inward_record_id: inwardRecordId,
+      delivery_order_id: deliveryOrderId,
+    };
+  }, [allInwardItems, deliveryOrderId, inwardRecordId]);
 
   useEffect(() => {
     if (deliveryInwardRecordIdMapping) {
@@ -1238,6 +1244,10 @@ export default function AddSupplyDeliveryForm({
     try {
       const filteredItems = inwardRecord.items;
 
+      const currentRecordDeliveryId = filteredItems
+        .flatMap((it) => it.item_deliveries)
+        .find((d) => d.delivery_order_id === deliveryOrderId)?.record_delivery_id;
+
       const newDiscrepancies: DiscrepancyItem[] = [];
 
       const newRows = filteredItems
@@ -1248,47 +1258,49 @@ export default function AddSupplyDeliveryForm({
           const packSize = parseFloat(item.unit_pack) || 1;
           const receivedQty = parseFloat(item.quantity_received_current) || 0;
 
-          const totalConsumedQty = item.item_deliveries.reduce(
-            (consumedQty, delivery) => {
+          const totalUnitsAvailable = (() => {
+            const raw = item.quantity_in_units;
+            const parsed =
+              raw !== undefined && raw !== null && raw !== ""
+                ? parseFloat(raw)
+                : NaN;
+            return Number.isFinite(parsed) ? parsed : receivedQty * packSize;
+          })();
+
+          const totalConsumedUnits = item.item_deliveries.reduce(
+            (consumedUnits, delivery) => {
               if (
                 delivery.status === "ACCEPTED" ||
                 delivery.status === "ACCEPTED_OVERRIDE"
               ) {
-                return (
-                  consumedQty + parseInt(delivery.quantity_received) / packSize
-                );
+                return consumedUnits + (parseFloat(delivery.quantity_received) || 0);
               }
-              return consumedQty;
+              return consumedUnits;
             },
             0,
           );
 
-          const availableQty = Math.max(receivedQty - totalConsumedQty, 0);
+          const availableUnits = Math.max(totalUnitsAvailable - totalConsumedUnits, 0);
+          const availableQty = packSize > 0 ? availableUnits / packSize : availableUnits;
 
-          if (totalConsumedQty > receivedQty) {
-            const currentRecordDeliveryId = inwardRecord.deliveries.find(
-              (d) => d.delivery_order_id === deliveryOrderId,
-            )?.id;
+          if (totalConsumedUnits > totalUnitsAvailable && currentRecordDeliveryId) {
+            const activeDeliveries = item.item_deliveries.filter(
+              (d) =>
+                d.record_delivery_id === currentRecordDeliveryId &&
+                d.status === "ACCEPTED",
+            );
 
-            if (currentRecordDeliveryId) {
-              const activeDeliveries = item.item_deliveries.filter(
-                (d) =>
-                  d.record_delivery_id === currentRecordDeliveryId &&
-                  d.status === "ACCEPTED",
-              );
-
-              if (activeDeliveries.length > 0) {
-                newDiscrepancies.push({
-                  drug_name: item.drug_name,
-                  available_qty: receivedQty,
-                  accepted_qty: totalConsumedQty,
-                  pack_size: packSize,
-                  supply_delivery_ids: activeDeliveries.map(
-                    (d) => d.supply_delivery_id as string,
-                  ),
-                  record_item_delivery_ids: activeDeliveries.map((d) => d.id),
-                });
-              }
+            if (activeDeliveries.length > 0) {
+              newDiscrepancies.push({
+                drug_name: item.drug_name,
+                available_qty: totalUnitsAvailable / (packSize || 1),
+                accepted_qty: totalConsumedUnits / (packSize || 1),
+                pack_size: packSize,
+                supply_delivery_ids: activeDeliveries.map(
+                  (d) => d.supply_delivery_id as string,
+                ),
+                record_item_delivery_ids: activeDeliveries.map((d) => d.id),
+              });
             }
           }
 
@@ -1302,8 +1314,8 @@ export default function AddSupplyDeliveryForm({
             pack_qty: availableQty,
             quantity: String(availableQty),
             accepted_pack_qty: availableQty,
-            accepted_qty_in_units: String(packSize * availableQty),
-            quantity_in_units: String(packSize * availableQty),
+            accepted_qty_in_units: String(availableUnits),
+            quantity_in_units: String(availableUnits),
             eaushadhi_drug_name: item.drug_name,
             eaushadhi_drug_id: item.drug_id,
             is_new_batch: true,
