@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import {
   Trash2,
   AlertCircle,
@@ -638,6 +638,7 @@ function ProductMappingSelector({
         open={isOpen}
         onOpenChange={handleOpenChange}
         disabled={isLoading || !eaushadhiDrugId}
+        modal={false}
       >
         <SelectTrigger size="sm" className="w-full">
           <SelectValue
@@ -653,6 +654,8 @@ function ProductMappingSelector({
         <SelectContent
           position="popper"
           className="w-[var(--radix-select-trigger-width)]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
         >
           {isSearching && (
             <div className="flex items-center justify-center py-4 text-xs text-gray-500">
@@ -753,48 +756,43 @@ function ProductMappingSelector({
 }
 
 // ─── Delivery Row ──────────────────────────────────────────────────────────
-function DeliveryRow({
+// ─── Delivery Row ──────────────────────────────────────────────────────────
+function DeliveryRowImpl({
   facilityId,
   row,
-  onChange,
-  onRemove,
+  updateRow,
+  removeRow,
   allowDeletingInward,
   allowUpdatingQuantity,
   autofillMapping,
 }: {
   facilityId: string;
   row: RowItem;
-  onChange: (updated: RowItem) => void;
-  onRemove: () => void;
+  updateRow: (id: string, updated: RowItem) => void;
+  removeRow: (id: string) => void;
   allowDeletingInward: boolean;
   allowUpdatingQuantity: boolean;
   autofillMapping?: ProductMapping;
   suggestedBaseUnitCode?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
+  const queryClient = useQueryClient();
+
+  const onChange = useCallback(
+    (updated: RowItem) => updateRow(row.record_item_id, updated),
+    [updateRow, row.record_item_id],
+  );
+
+  const onRemove = useCallback(
+    () => removeRow(row.record_item_id),
+    [removeRow, row.record_item_id],
+  );
+
   const set = useCallback(
     (field: keyof RowItem, value: unknown) =>
       onChange({ ...row, [field]: value } as RowItem),
     [row, onChange],
   );
-
-  const queryClient = useQueryClient();
-
-  // Auto-calculate quantity from pack size and pack quantity
-  useEffect(() => {
-    const qty = (row.pack_size || 1) * (row.pack_qty || 1);
-    if (String(qty) !== row.quantity) {
-      onChange({ ...row, quantity: String(qty) });
-    }
-  }, [row.pack_size, row.pack_qty]); // eslint-disable-line
-
-  // Auto-calculate accepted quantity
-  useEffect(() => {
-    const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
-    if (String(acceptedQty) !== row.accepted_qty_in_units) {
-      onChange({ ...row, accepted_qty_in_units: String(acceptedQty) });
-    }
-  }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
 
   const handleSelectMapping = (mapping: ProductMapping) => {
     queryClient.removeQueries({
@@ -854,7 +852,15 @@ function DeliveryRow({
           type="number"
           min={1}
           value={row.pack_size}
-          onChange={(e) => set("pack_size", parseInt(e.target.value) || 1)}
+          onChange={(e) => {
+            const pack_size = parseInt(e.target.value) || 1;
+            onChange({
+              ...row,
+              pack_size,
+              quantity: String(pack_size * (row.pack_qty || 1)),
+              accepted_qty_in_units: String(pack_size * (row.accepted_pack_qty || 0)),
+            });
+          }}
           className="h-9 text-xs w-full"
           disabled
         />
@@ -864,7 +870,14 @@ function DeliveryRow({
           type="number"
           min={1}
           value={row.pack_qty}
-          onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
+          onChange={(e) => {
+            const pack_qty = parseInt(e.target.value) || 1;
+            onChange({
+              ...row,
+              pack_qty,
+              quantity: String((row.pack_size || 1) * pack_qty),
+            });
+          }}
           className="h-9 text-xs w-full"
           disabled
         />
@@ -877,9 +890,14 @@ function DeliveryRow({
               type="number"
               min={0}
               value={row.accepted_pack_qty}
-              onChange={(e) =>
-                set("accepted_pack_qty", parseInt(e.target.value) || 0)
-              }
+              onChange={(e) => {
+                const accepted_pack_qty = parseInt(e.target.value) || 0;
+                onChange({
+                  ...row,
+                  accepted_pack_qty,
+                  accepted_qty_in_units: String((row.pack_size || 1) * accepted_pack_qty),
+                });
+              }}
               className="h-9 text-xs w-full"
               disabled={!allowUpdatingQuantity}
             />
@@ -915,6 +933,16 @@ function DeliveryRow({
   );
 }
 
+const DeliveryRow = memo(DeliveryRowImpl, (prev, next) => {
+  return (
+    prev.row === next.row &&
+    prev.autofillMapping === next.autofillMapping &&
+    prev.allowDeletingInward === next.allowDeletingInward &&
+    prev.allowUpdatingQuantity === next.allowUpdatingQuantity &&
+    prev.updateRow === next.updateRow &&
+    prev.removeRow === next.removeRow
+  );
+});
 // ─── Main Form ─────────────────────────────────────────────────────────────
 export default function AddSupplyDeliveryForm({
   facilityId,
@@ -975,12 +1003,12 @@ export default function AddSupplyDeliveryForm({
     getRecordDeliveryIdFromUrl()
   );
 
-  const updateRow = useCallback((index: number, updated: RowItem) => {
-    setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
+  const updateRow = useCallback((id: string, updated: RowItem) => {
+    setRows((prev) => prev.map((r) => (r.record_item_id === id ? updated : r)));
   }, []);
 
-  const removeRow = useCallback((index: number) => {
-    setRows((prev) => prev.filter((_, i) => i !== index));
+  const removeRow = useCallback((id: string) => {
+    setRows((prev) => prev.filter((r) => r.record_item_id !== id));
   }, []);
 
   // Step 1: Fetch institute mappings to get supplier warehouse name
@@ -1139,7 +1167,7 @@ export default function AddSupplyDeliveryForm({
     };
   }, [inwardRecordMeta, allInwardItems]);
 
-  const { data: defaultMappingsData } = useQuery({
+  const { data: defaultMappingsData, isLoading: isLoadingDefaultMappings } = useQuery({
     queryKey: ["defaultProductMappings", inwardRecordId],
     queryFn: () =>
       request<DefaultProductMappingsResponse>(
@@ -1182,6 +1210,7 @@ export default function AddSupplyDeliveryForm({
 
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
+    if (isLoadingDefaultMappings) return;
 
     try {
       const filteredItems = inwardRecord.items;
@@ -1277,7 +1306,7 @@ export default function AddSupplyDeliveryForm({
       console.error("Error prefilling data:", err);
       setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t, autofillMappingsMap]);
+  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t, autofillMappingsMap, isLoadingDefaultMappings]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -1630,7 +1659,7 @@ export default function AddSupplyDeliveryForm({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ scrollbarGutter: "stable" }}>
       <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
         <table className="w-full text-sm border-collapse">
           <thead className="bg-gray-100">
@@ -1669,13 +1698,13 @@ export default function AddSupplyDeliveryForm({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((row, index) => (
+            {rows.map((row) => (
               <DeliveryRow
                 key={row.record_item_id}
                 facilityId={facilityId}
                 row={row}
-                onChange={(updated) => updateRow(index, updated)}
-                onRemove={() => removeRow(index)}
+                updateRow={updateRow}
+                removeRow={removeRow}
                 allowDeletingInward={
                   meta?.allow_deleting_inward_after_fetch ?? false
                 }
