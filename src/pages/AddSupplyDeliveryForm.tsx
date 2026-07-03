@@ -39,7 +39,6 @@ import {
   buildChainBatch,
   chunkRows,
   extractChainResults,
-  SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
 import { I18NNAMESPACE, INWARD_RECORDS_PAGE_SIZE } from "@/lib/contants";
 import {
@@ -57,9 +56,7 @@ interface ErrorDetail {
   type?: string;
 }
 
-function extractErrorDetailsFromSuperBatch(
-  results: any[]
-): ErrorDetail[] {
+function extractErrorDetailsFromSuperBatch(results: any[]): ErrorDetail[] {
   const errors: ErrorDetail[] = [];
 
   results.forEach((result) => {
@@ -70,17 +67,21 @@ function extractErrorDetailsFromSuperBatch(
         data.errors.forEach((err: any) => {
           if (err.type === "validation_error" && err.msg) {
             // err.msg is an object like { quantity_received: [message] }
-            Object.entries(err.msg).forEach(([field, messages]: [string, any]) => {
-              const fieldMessages = Array.isArray(messages) ? messages : [messages];
-              fieldMessages.forEach((msg: string) => {
-                errors.push({
-                  reference_id: result.reference_id,
-                  field,
-                  message: msg,
-                  type: err.type,
+            Object.entries(err.msg).forEach(
+              ([field, messages]: [string, any]) => {
+                const fieldMessages = Array.isArray(messages)
+                  ? messages
+                  : [messages];
+                fieldMessages.forEach((msg: string) => {
+                  errors.push({
+                    reference_id: result.reference_id,
+                    field,
+                    message: msg,
+                    type: err.type,
+                  });
                 });
-              });
-            });
+              },
+            );
           } else if (err.msg && typeof err.msg === "string") {
             errors.push({
               reference_id: result.reference_id,
@@ -89,14 +90,12 @@ function extractErrorDetailsFromSuperBatch(
             });
           }
         });
-      }
-      else if (data?.detail && typeof data.detail === "string") {
+      } else if (data?.detail && typeof data.detail === "string") {
         errors.push({
           reference_id: result.reference_id,
           message: data.detail,
         });
-      }
-      else if (data?.message && typeof data.message === "string") {
+      } else if (data?.message && typeof data.message === "string") {
         errors.push({
           reference_id: result.reference_id,
           message: data.message,
@@ -108,8 +107,10 @@ function extractErrorDetailsFromSuperBatch(
   return errors;
 }
 
-
-function formatErrorMessage(errors: ErrorDetail[], t: (key: string) => string): string {
+function formatErrorMessage(
+  errors: ErrorDetail[],
+  t: (key: string) => string,
+): string {
   if (errors.length === 0) return t("supply_form_unexpected_error");
 
   const byRef = new Map<string, ErrorDetail[]>();
@@ -202,14 +203,12 @@ interface Delivery {
 }
 
 interface InwardRecord {
+  meta: Record<string, any>;
   id: string;
   facility_id: string;
   inward_date: string;
-  sync_status: string;
-  items_initial_count: number;
-  items_current_count: number;
+  count: number;
   items: InwardItem[];
-  deliveries: Delivery[];
 }
 
 interface SupplierMapping {
@@ -322,7 +321,10 @@ function getItemAvailability(item: InwardItem): ItemAvailability {
   })();
 
   const consumedUnits = item.item_deliveries.reduce((sum, delivery) => {
-    if (delivery.status === "ACCEPTED" || delivery.status === "ACCEPTED_OVERRIDE") {
+    if (
+      delivery.status === "ACCEPTED" ||
+      delivery.status === "ACCEPTED_OVERRIDE"
+    ) {
       return sum + (parseFloat(delivery.quantity_received) || 0);
     }
     return sum;
@@ -349,7 +351,8 @@ function computeDiscrepancies(
   const discrepancies: DiscrepancyItem[] = [];
 
   items.forEach((item) => {
-    const { packSize, totalUnitsAvailable, consumedUnits } = getItemAvailability(item);
+    const { packSize, totalUnitsAvailable, consumedUnits } =
+      getItemAvailability(item);
 
     if (consumedUnits > totalUnitsAvailable) {
       const activeDeliveries = item.item_deliveries.filter(
@@ -417,7 +420,6 @@ function CreateProductKnowledgeDialog({
   onOpenChange,
   onCreated,
   suggestedBaseUnitCode,
-  suggestedName,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
@@ -426,7 +428,6 @@ function CreateProductKnowledgeDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
-  suggestedName?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const [name, setName] = useState("");
@@ -658,7 +659,6 @@ function ProductMappingSelector({
   isLoading,
   onSelect,
   suggestedBaseUnitCode,
-  suggestedName,
   autofillMapping,
 }: {
   facilityId: string;
@@ -669,7 +669,6 @@ function ProductMappingSelector({
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
-  suggestedName?: string;
   autofillMapping?: ProductMapping;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
@@ -678,7 +677,11 @@ function ProductMappingSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  const mappingsQueryKey = ["productMappingsSearch", facilityId, eaushadhiDrugId];
+  const mappingsQueryKey = [
+    "productMappingsSearch",
+    facilityId,
+    eaushadhiDrugId,
+  ];
 
   const mappingsQueryFn = useCallback(
     () =>
@@ -738,14 +741,8 @@ function ProductMappingSelector({
         open={isOpen}
         onOpenChange={handleOpenChange}
         disabled={isLoading || !eaushadhiDrugId}
-        modal={false}
       >
-        <SelectTrigger
-          size="sm"
-          className="w-full"
-          onPointerEnter={prefetchMappings}
-          onFocus={prefetchMappings}
-        >
+        <SelectTrigger size="sm" className="w-full" onClick={prefetchMappings}>
           <SelectValue
             placeholder={
               !eaushadhiDrugId
@@ -755,14 +752,14 @@ function ProductMappingSelector({
                   : t("supply_form_select_product")
             }
           >
-            {value ? selectedLabel || t("supply_form_select_product") : undefined}
+            {value
+              ? selectedLabel || t("supply_form_select_product")
+              : undefined}
           </SelectValue>
         </SelectTrigger>
         <SelectContent
           position="popper"
-          className="w-[var(--radix-select-trigger-width)]"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => e.preventDefault()}
+          className="w-(--radix-select-trigger-width)"
         >
           {isSearching && (
             <div className="flex items-center justify-center py-4 text-xs text-gray-500">
@@ -777,67 +774,89 @@ function ProductMappingSelector({
               </p>
             </div>
           )}
-          {!isSearching && (() => {
-            const imported = searchResults.filter(m => m.mapping_type === "BULK_IMPORT");
-            const suggestions = searchResults
-              .filter(m => m.mapping_type !== "BULK_IMPORT")
-              .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0));
-
-            const renderGroup = (label: string, items: typeof searchResults) =>
-              items.length > 0 && (
-                <SelectGroup key={label}>
-                  <SelectLabel className="text-xs text-gray-400 font-medium px-2 py-1">
-                    {label}
-                  </SelectLabel>
-                  {items.map((mapping) => (
-                    <SelectPrimitive.Item
-                      key={mapping.id}
-                      value={mapping.id}
-                      className="focus:bg-gray-100 focus:text-gray-900 relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 whitespace-normal wrap-break-word"
-                    >
-                      <span className="absolute right-2 flex size-3.5 items-center justify-center">
-                        <SelectPrimitive.ItemIndicator>
-                          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polyline points="20 6 9 17 4 12" /></svg>
-                        </SelectPrimitive.ItemIndicator>
-                      </span>
-                      <SelectPrimitive.ItemText>
-                        {mapping.product_knowledge.name}
-                      </SelectPrimitive.ItemText>
-                      {(mapping.usage_count ?? 0) > 0 && (
-                        <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
-                          {mapping.usage_count}&nbsp;{t("times")}
-                        </span>
-                      )}
-                    </SelectPrimitive.Item>
-                  ))}
-                </SelectGroup>
+          {!isSearching &&
+            (() => {
+              const imported = searchResults.filter(
+                (m) => m.mapping_type === "BULK_IMPORT",
               );
+              const suggestions = searchResults
+                .filter((m) => m.mapping_type !== "BULK_IMPORT")
+                .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0));
 
-            return (
-              <>
-                {renderGroup(t("supply_form_product_group_imported"), imported)}
-                {renderGroup(t("supply_form_product_group_suggestions"), suggestions)}
-              </>
-            );
-          })()}
-          {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
-            <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
-              <Button
-                variant="primary"
-                size="default"
-                type="button"
-                className="w-full"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsOpen(false);
-                  setCreateDialogOpen(true);
-                }}
-              >
-                <PlusIcon className="h-4 w-4" />
-                {t("supply_form_create_product_knowledge")}
-              </Button>
-            </div>
-          )}
+              const renderGroup = (
+                label: string,
+                items: typeof searchResults,
+              ) =>
+                items.length > 0 && (
+                  <SelectGroup key={label}>
+                    <SelectLabel className="text-xs text-gray-400 font-medium px-2 py-1">
+                      {label}
+                    </SelectLabel>
+                    {items.map((mapping) => (
+                      <SelectPrimitive.Item
+                        key={mapping.id}
+                        value={mapping.id}
+                        className="focus:bg-gray-100 focus:text-gray-900 relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 whitespace-normal wrap-break-word"
+                      >
+                        <span className="absolute right-2 flex size-3.5 items-center justify-center">
+                          <SelectPrimitive.ItemIndicator>
+                            <svg
+                              className="size-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </SelectPrimitive.ItemIndicator>
+                        </span>
+                        <SelectPrimitive.ItemText>
+                          {mapping.product_knowledge.name}
+                        </SelectPrimitive.ItemText>
+                        {(mapping.usage_count ?? 0) > 0 && (
+                          <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
+                            {mapping.usage_count}&nbsp;{t("times")}
+                          </span>
+                        )}
+                      </SelectPrimitive.Item>
+                    ))}
+                  </SelectGroup>
+                );
+
+              return (
+                <>
+                  {renderGroup(
+                    t("supply_form_product_group_imported"),
+                    imported,
+                  )}
+                  {renderGroup(
+                    t("supply_form_product_group_suggestions"),
+                    suggestions,
+                  )}
+                </>
+              );
+            })()}
+          {!isSearching &&
+            canCreate &&
+            (meta?.allow_creating_product_knowledge ?? false) && (
+              <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
+                <Button
+                  variant="primary"
+                  size="default"
+                  type="button"
+                  className="w-full"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    setCreateDialogOpen(true);
+                  }}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  {t("supply_form_create_product_knowledge")}
+                </Button>
+              </div>
+            )}
         </SelectContent>
       </Select>
 
@@ -848,7 +867,6 @@ function ProductMappingSelector({
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         suggestedBaseUnitCode={suggestedBaseUnitCode}
-        suggestedName={suggestedName}
         onCreated={async (mapping) => {
           const refreshed = await queryClient.fetchQuery({
             queryKey: mappingsQueryKey,
@@ -951,11 +969,10 @@ function DeliveryRowCellsImpl({
             isLoading={false}
             onSelect={handleSelectMapping}
             suggestedBaseUnitCode={row.suggested_base_unit_code}
-            suggestedName={row.product_knowledge_name}
             autofillMapping={autofillMapping}
           />
           {row.eaushadhi_drug_name && (
-            <span className="text-xs text-gray-500 break-words">
+            <span className="text-xs text-gray-500 wrap-break-word">
               {t("supply_form_eaushadhi_prefix")} {row.eaushadhi_drug_name}
             </span>
           )}
@@ -990,7 +1007,9 @@ function DeliveryRowCellsImpl({
               ...row,
               pack_size,
               quantity: String(pack_size * (row.pack_qty || 1)),
-              accepted_qty_in_units: String(pack_size * (row.accepted_pack_qty || 0)),
+              accepted_qty_in_units: String(
+                pack_size * (row.accepted_pack_qty || 0),
+              ),
             });
           }}
           className="h-9 text-xs w-full"
@@ -1025,7 +1044,9 @@ function DeliveryRowCellsImpl({
               onChange({
                 ...row,
                 accepted_pack_qty,
-                accepted_qty_in_units: String((row.pack_size || 1) * accepted_pack_qty),
+                accepted_qty_in_units: String(
+                  (row.pack_size || 1) * accepted_pack_qty,
+                ),
               });
             }}
             className="h-9 text-xs w-full"
@@ -1033,7 +1054,9 @@ function DeliveryRowCellsImpl({
           />
         </div>
       )}
-      <div className={`px-2 py-2 ${allowDeletingInward ? "border-r border-gray-100" : ""}`}>
+      <div
+        className={`px-2 py-2 ${allowDeletingInward ? "border-r border-gray-100" : ""}`}
+      >
         <div className="flex flex-col gap-1">
           <Input
             type="number"
@@ -1125,13 +1148,11 @@ export default function AddSupplyDeliveryForm({
     window.history.replaceState(
       {},
       "",
-      `${window.location.pathname}?${params.toString()}`
+      `${window.location.pathname}?${params.toString()}`,
     );
   };
 
-  const recordDeliveryId = useRef<string | null>(
-    getRecordDeliveryIdFromUrl()
-  );
+  const recordDeliveryId = useRef<string | null>(getRecordDeliveryIdFromUrl());
 
   const updateRow = useCallback((id: string, updated: RowItem) => {
     setRows((prev) => prev.map((r) => (r.record_item_id === id ? updated : r)));
@@ -1180,84 +1201,70 @@ export default function AddSupplyDeliveryForm({
   const initializationRef = useRef(false);
   const paginationCancelledRef = useRef(false);
 
-  const fetchAllInwardRecordPages = useCallback(
-    async () => {
-      if (!inwardRecordId) return;
+  const fetchAllInwardRecordPages = useCallback(async () => {
+    if (!inwardRecordId) return;
 
-      try {
-        // Reset cancel flag
-        paginationCancelledRef.current = false;
+    try {
+      // Reset cancel flag
+      paginationCancelledRef.current = false;
 
-        let allItems: InwardItem[] = [];
-        let offset = 0;
-        let totalCount = 0;
-        let isFirstPage = true;
+      let allItems: InwardItem[] = [];
+      let offset = 0;
+      let totalCount = 0;
+      let isFirstPage = true;
 
-        do {
-          // Check if cancelled
-          if (paginationCancelledRef.current) {
-            setPaginationInProgress(false);
-            return;
-          }
+      do {
+        // Check if cancelled
+        if (paginationCancelledRef.current) {
+          setPaginationInProgress(false);
+          return;
+        }
 
-          // Fetch current page
-          const pageResponse = await request<{
-            meta: Record<string, any>;
-            id: string;
-            facility_id: string;
-            inward_date: string;
-            count: number;
-            items: InwardItem[];
-          }>(
-            `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
-            HttpMethod.GET,
-            {
-              limit: INWARD_RECORDS_PAGE_SIZE,
-              offset: offset,
-              warehouse_name: supplierWarehouseName || undefined,
-            },
-          );
+        // Fetch current page
+        const pageResponse = await request<InwardRecord>(
+          `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
+          HttpMethod.GET,
+          {
+            limit: INWARD_RECORDS_PAGE_SIZE,
+            offset: offset,
+            warehouse_name: supplierWarehouseName || undefined,
+          },
+        );
 
-          if (!pageResponse) {
-            setPaginationInProgress(false);
-            return;
-          }
+        if (!pageResponse) {
+          setPaginationInProgress(false);
+          return;
+        }
 
-          if (isFirstPage) {
-            setInwardRecordMeta({
-              id: pageResponse.id,
-              facility_id: pageResponse.facility_id,
-              inward_date: pageResponse.inward_date,
-              sync_status: "FETCHED",
-              items_initial_count: pageResponse.count,
-              items_current_count: pageResponse.count,
-              deliveries: [],
-            });
-            totalCount = pageResponse.count;
-            isFirstPage = false;
-          }
+        if (isFirstPage) {
+          setInwardRecordMeta({
+            id: pageResponse.id,
+            facility_id: pageResponse.facility_id,
+            inward_date: pageResponse.inward_date,
+            sync_status: "FETCHED",
+            items_initial_count: pageResponse.count,
+            items_current_count: pageResponse.count,
+            deliveries: [],
+          });
+          totalCount = pageResponse.count;
+          isFirstPage = false;
+        }
 
-          if (pageResponse.items && pageResponse.items.length > 0) {
-            allItems = [...allItems, ...pageResponse.items];
-          }
+        if (pageResponse.items && pageResponse.items.length > 0) {
+          allItems = [...allItems, ...pageResponse.items];
+        }
 
-          setAllInwardItems([...allItems]);
+        setAllInwardItems([...allItems]);
 
-          const pageNumber = Math.floor(offset / INWARD_RECORDS_PAGE_SIZE) + 1;
-          const totalPages = Math.ceil(totalCount / INWARD_RECORDS_PAGE_SIZE);
+        offset += INWARD_RECORDS_PAGE_SIZE;
+      } while (offset < totalCount);
 
-          offset += INWARD_RECORDS_PAGE_SIZE;
-
-        } while (offset < totalCount);  
-
-        setPaginationInProgress(false);
-      } catch (err) {
-        console.error("Error fetching inward record pages:", err);
-        setPaginationInProgress(false);
-      }
-    },
-    [inwardRecordId, supplierWarehouseName],
-  );
+      setPaginationInProgress(false);
+    } catch (err) {
+      console.error("Error fetching inward record pages:", err);
+      setPaginationInProgress(false);
+    }
+  }, [inwardRecordId, supplierWarehouseName]);
 
   const handleCancel = useCallback(() => {
     paginationCancelledRef.current = true;
@@ -1271,11 +1278,14 @@ export default function AddSupplyDeliveryForm({
   useEffect(() => {
     if (initializationRef.current) return;
 
-    if (inwardRecordId && !paginationInProgress && allInwardItems.length === 0) {
+    if (
+      inwardRecordId &&
+      !paginationInProgress &&
+      allInwardItems.length === 0
+    ) {
       initializationRef.current = true;
       setPaginationInProgress(true);
-      fetchAllInwardRecordPages().finally(() => {
-      });
+      fetchAllInwardRecordPages().finally(() => {});
     }
   }, [inwardRecordId, fetchAllInwardRecordPages]);
 
@@ -1287,18 +1297,19 @@ export default function AddSupplyDeliveryForm({
     };
   }, [inwardRecordMeta, allInwardItems]);
 
-  const { data: defaultMappingsData, isLoading: isLoadingDefaultMappings } = useQuery({
-    queryKey: ["defaultProductMappings", inwardRecordId],
-    queryFn: () =>
-      request<DefaultProductMappingsResponse>(
-        `/api/care_eaushadhi/product-mappings/default-mapping/`,
-        HttpMethod.GET,
-        {
-          inward_record_id: inwardRecordId,
-        },
-      ),
-    enabled: !!inwardRecordId,
-  });
+  const { data: defaultMappingsData, isLoading: isLoadingDefaultMappings } =
+    useQuery({
+      queryKey: ["defaultProductMappings", inwardRecordId],
+      queryFn: () =>
+        request<DefaultProductMappingsResponse>(
+          `/api/care_eaushadhi/product-mappings/default-mapping/`,
+          HttpMethod.GET,
+          {
+            inward_record_id: inwardRecordId,
+          },
+        ),
+      enabled: !!inwardRecordId,
+    });
 
   // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
   const autofillMappingsMap = useMemo(() => {
@@ -1348,7 +1359,10 @@ export default function AddSupplyDeliveryForm({
     try {
       const filteredItems = inwardRecord.items;
 
-      const newDiscrepancies = computeDiscrepancies(filteredItems, deliveryOrderId);
+      const newDiscrepancies = computeDiscrepancies(
+        filteredItems,
+        deliveryOrderId,
+      );
 
       const newRows = filteredItems
         .map((item) => {
@@ -1356,7 +1370,8 @@ export default function AddSupplyDeliveryForm({
             ? item.expiry_date.split("T")[0]
             : "";
           const { packSize, availableUnits } = getItemAvailability(item);
-          const availableQty = packSize > 0 ? availableUnits / packSize : availableUnits;
+          const availableQty =
+            packSize > 0 ? availableUnits / packSize : availableUnits;
 
           const row = {
             ...EMPTY_ROW(),
@@ -1395,7 +1410,14 @@ export default function AddSupplyDeliveryForm({
       console.error("Error prefilling data:", err);
       setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t, autofillMappingsMap, isLoadingDefaultMappings]);
+  }, [
+    inwardRecord,
+    supplierWarehouseName,
+    deliveryOrderId,
+    t,
+    autofillMappingsMap,
+    isLoadingDefaultMappings,
+  ]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -1441,14 +1463,19 @@ export default function AddSupplyDeliveryForm({
       return response;
     } catch (err: any) {
       // Handle 409 - might already be cached in URL
-      const is409 = err.status === 409 || err.statusCode === 409 || (err.message && err.message.includes("409"));
+      const is409 =
+        err.status === 409 ||
+        err.statusCode === 409 ||
+        (err.message && err.message.includes("409"));
       if (is409) {
         // Try to get from URL params as fallback
         const cachedId = getRecordDeliveryIdFromUrl();
         if (cachedId) {
           return { id: cachedId };
         }
-        toast.error("This delivery order is already linked elsewhere. Please use a different delivery order.");
+        toast.error(
+          "This delivery order is already linked elsewhere. Please use a different delivery order.",
+        );
       }
       throw err;
     }
@@ -1458,7 +1485,11 @@ export default function AddSupplyDeliveryForm({
     rowsToSave: RowItem[],
     statusOverrides?: Map<string, "ACCEPTED_OVERRIDE" | "SOURCE_REVERSED">,
   ) {
-    if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && !recordDeliveryId.current) {
+    if (
+      inwardRecordId &&
+      deliveryInwardRecordIdMapping === undefined &&
+      !recordDeliveryId.current
+    ) {
       const response = await recordDeliveries({
         inward_record_id: inwardRecordId,
         facility_id: facilityId,
@@ -1566,9 +1597,10 @@ export default function AddSupplyDeliveryForm({
       } else {
         const firstFailed = err.failed?.[0];
         toast.error(
-          `Failed: ${(firstFailed?.data as any)?.detail ??
-          firstFailed?.status_code ??
-          t("supply_form_unexpected_error")
+          `Failed: ${
+            (firstFailed?.data as any)?.detail ??
+            firstFailed?.status_code ??
+            t("supply_form_unexpected_error")
           }`,
         );
       }
@@ -1598,8 +1630,12 @@ export default function AddSupplyDeliveryForm({
     const historical = discrepancies.filter((d) => !d.record_item_id);
     const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
 
-    const allSupplyDeliveryIds = historical.flatMap((d) => d.supply_delivery_ids);
-    const allRecordItemDeliveryIds = historical.flatMap((d) => d.record_item_delivery_ids);
+    const allSupplyDeliveryIds = historical.flatMap(
+      (d) => d.supply_delivery_ids,
+    );
+    const allRecordItemDeliveryIds = historical.flatMap(
+      (d) => d.record_item_delivery_ids,
+    );
 
     if (
       allSupplyDeliveryIds.length === 0 &&
@@ -1612,7 +1648,10 @@ export default function AddSupplyDeliveryForm({
 
     setIsMarkingErrors(true);
     try {
-      if (allSupplyDeliveryIds.length > 0 || allRecordItemDeliveryIds.length > 0) {
+      if (
+        allSupplyDeliveryIds.length > 0 ||
+        allRecordItemDeliveryIds.length > 0
+      ) {
         await Promise.all([
           ...allSupplyDeliveryIds.map((id) =>
             request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
@@ -1632,7 +1671,8 @@ export default function AddSupplyDeliveryForm({
       if (inputOnly.length > 0) {
         const overrideMap = new Map<string, "SOURCE_REVERSED">();
         inputOnly.forEach((d) => {
-          if (d.record_item_id) overrideMap.set(d.record_item_id, "SOURCE_REVERSED");
+          if (d.record_item_id)
+            overrideMap.set(d.record_item_id, "SOURCE_REVERSED");
         });
         await saveRows(rows, overrideMap);
       }
@@ -1666,8 +1706,12 @@ export default function AddSupplyDeliveryForm({
     const historical = discrepancies.filter((d) => !d.record_item_id);
     const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
 
-    const allSupplyDeliveryIds = historical.flatMap((d) => d.supply_delivery_ids);
-    const allRecordItemDeliveryIds = historical.flatMap((d) => d.record_item_delivery_ids);
+    const allSupplyDeliveryIds = historical.flatMap(
+      (d) => d.supply_delivery_ids,
+    );
+    const allRecordItemDeliveryIds = historical.flatMap(
+      (d) => d.record_item_delivery_ids,
+    );
 
     if (
       allSupplyDeliveryIds.length === 0 &&
@@ -1695,7 +1739,8 @@ export default function AddSupplyDeliveryForm({
       if (inputOnly.length > 0) {
         const overrideMap = new Map<string, "ACCEPTED_OVERRIDE">();
         inputOnly.forEach((d) => {
-          if (d.record_item_id) overrideMap.set(d.record_item_id, "ACCEPTED_OVERRIDE");
+          if (d.record_item_id)
+            overrideMap.set(d.record_item_id, "ACCEPTED_OVERRIDE");
         });
         await saveRows(rows, overrideMap);
       }
@@ -1752,9 +1797,18 @@ export default function AddSupplyDeliveryForm({
 
     if (!validate()) return;
 
-    const historicalDiscrepancies = computeDiscrepancies(allInwardItems, deliveryOrderId);
-    const inputDiscrepancies = computeInputQuantityDiscrepancies(rows, itemAvailabilityMap);
-    const preSaveDiscrepancies = [...historicalDiscrepancies, ...inputDiscrepancies];
+    const historicalDiscrepancies = computeDiscrepancies(
+      allInwardItems,
+      deliveryOrderId,
+    );
+    const inputDiscrepancies = computeInputQuantityDiscrepancies(
+      rows,
+      itemAvailabilityMap,
+    );
+    const preSaveDiscrepancies = [
+      ...historicalDiscrepancies,
+      ...inputDiscrepancies,
+    ];
     if (preSaveDiscrepancies.length > 0) {
       setDiscrepancies(preSaveDiscrepancies);
       toast.error(t("supply_form_discrepancy_title"));
@@ -1818,14 +1872,13 @@ export default function AddSupplyDeliveryForm({
             try {
               await initiateInwardFetch(true);
               toast.success(t("supply_form_refresh_success"));
-              
-              setAllInwardItems([]);        
-              setInwardRecordMeta(null);    
-              setPaginationInProgress(true);  
+
+              setAllInwardItems([]);
+              setInwardRecordMeta(null);
+              setPaginationInProgress(true);
               initializationRef.current = false;
-              
-              fetchAllInwardRecordPages().finally(() => {  
-              });
+
+              fetchAllInwardRecordPages().finally(() => {});
             } catch (error) {
               console.error("Failed to refresh inward data:", error);
               toast.error(t("supply_form_refresh_error"));
@@ -1853,7 +1906,9 @@ export default function AddSupplyDeliveryForm({
       updateRow={updateRow}
       removeRow={removeRow}
       allowDeletingInward={meta?.allow_deleting_inward_after_fetch ?? false}
-      allowUpdatingQuantity={meta?.allow_updating_quantity_after_received ?? false}
+      allowUpdatingQuantity={
+        meta?.allow_updating_quantity_after_received ?? false
+      }
       autofillMappingsMap={autofillMappingsMap}
       isProcessing={isProcessing}
       paginationInProgress={paginationInProgress}
@@ -1919,8 +1974,14 @@ function VirtualizedDeliveryTable({
     overscan: 10,
   });
 
-  const gridTemplateColumns = getGridTemplateColumns(allowUpdatingQuantity, allowDeletingInward);
-  const minTableWidth = getMinTableWidth(allowUpdatingQuantity, allowDeletingInward);
+  const gridTemplateColumns = getGridTemplateColumns(
+    allowUpdatingQuantity,
+    allowDeletingInward,
+  );
+  const minTableWidth = getMinTableWidth(
+    allowUpdatingQuantity,
+    allowDeletingInward,
+  );
 
   return (
     <div className="space-y-4" style={{ scrollbarGutter: "stable" }}>
@@ -1933,10 +1994,7 @@ function VirtualizedDeliveryTable({
           className="sticky top-0 z-10 bg-gray-100 border-b border-gray-200"
           style={{ minWidth: `${minTableWidth}px`, width: "100%" }}
         >
-          <div
-            className="grid"
-            style={{ gridTemplateColumns }}
-          >
+          <div className="grid" style={{ gridTemplateColumns }}>
             <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_product")}
             </div>
@@ -2003,7 +2061,9 @@ function VirtualizedDeliveryTable({
                     removeRow={removeRow}
                     allowDeletingInward={allowDeletingInward}
                     allowUpdatingQuantity={allowUpdatingQuantity}
-                    autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
+                    autofillMapping={autofillMappingsMap.get(
+                      row.eaushadhi_drug_id || "",
+                    )}
                   />
                 </div>
               );
@@ -2014,17 +2074,15 @@ function VirtualizedDeliveryTable({
 
       <div className="flex items-center justify-end">
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            disabled={isProcessing}
-          >
+          <Button variant="outline" onClick={onCancel} disabled={isProcessing}>
             {t("supply_form_cancel")}
           </Button>
 
           <Button
             onClick={onSave}
-            disabled={isProcessing || paginationInProgress || discrepancies.length > 0}
+            disabled={
+              isProcessing || paginationInProgress || discrepancies.length > 0
+            }
           >
             {isProcessing
               ? t("supply_form_saving")
