@@ -56,6 +56,26 @@ interface ErrorDetail {
   type?: string;
 }
 
+interface SupplyDeliveryRecord {
+  id: string;
+  status: string;
+  supplied_item_quantity: string;
+  supplied_item: {
+    batch: { lot_number: string };
+    product_knowledge: { id: string };
+  };
+}
+
+interface SupplyDeliveryListResponse {
+  count: number;
+  results: SupplyDeliveryRecord[];
+}
+
+interface ConsumedEntry {
+  consumedUnits: number;
+  supplyDeliveryIds: string[];
+}
+
 function extractErrorDetailsFromSuperBatch(results: any[]): ErrorDetail[] {
   const errors: ErrorDetail[] = [];
 
@@ -309,6 +329,37 @@ interface ItemAvailability {
   availableUnits: number;
 }
 
+function consumedKey(productKnowledgeId: string, batchLotNumber: string): string {
+  return `${productKnowledgeId}::${batchLotNumber}`;
+}
+
+function buildConsumedMap(
+  records: SupplyDeliveryRecord[],
+): Map<string, ConsumedEntry> {
+  const map = new Map<string, ConsumedEntry>();
+
+  for (const sd of records) {
+    // entered_in_error deliveries no longer count against availability
+    if (sd.status === "entered_in_error") continue;
+
+    const key = consumedKey(
+      sd.supplied_item.product_knowledge.id,
+      sd.supplied_item.batch.lot_number,
+    );
+    const qty = parseFloat(sd.supplied_item_quantity) || 0;
+
+    const existing = map.get(key);
+    if (existing) {
+      existing.consumedUnits += qty;
+      existing.supplyDeliveryIds.push(sd.id);
+    } else {
+      map.set(key, { consumedUnits: qty, supplyDeliveryIds: [sd.id] });
+    }
+  }
+
+  return map;
+}
+
 function getItemAvailability(item: InwardItem): ItemAvailability {
   const packSize = parseFloat(item.unit_pack) || 1;
   const receivedQty = parseFloat(item.quantity_received_current) || 0;
@@ -382,28 +433,56 @@ function computeDiscrepancies(
 function computeInputQuantityDiscrepancies(
   rows: RowItem[],
   availabilityByItemId: Map<string, ItemAvailability>,
+  consumedMap: Map<string, ConsumedEntry>,
+  supplyDeliveryIdToRecordItemDeliveryId: Map<string, string>,
 ): DiscrepancyItem[] {
   const discrepancies: DiscrepancyItem[] = [];
-
+  const rowsByKey = new Map<string, RowItem[]>();
   rows.forEach((row) => {
-    const availability = availabilityByItemId.get(row.record_item_id);
-    if (!availability) return;
+    if (!row.product_knowledge_id) return;
+    const key = consumedKey(row.product_knowledge_id, row.batch_number);
+    if (!rowsByKey.has(key)) rowsByKey.set(key, []);
+    rowsByKey.get(key)!.push(row);
+  });
 
-    const { packSize, availableUnits } = availability;
-    const parsedEntered = parseFloat(row.accepted_qty_in_units);
-    const enteredUnits = Number.isFinite(parsedEntered)
-      ? parsedEntered
-      : (row.accepted_pack_qty || 0) * (packSize || 1);
+  rowsByKey.forEach((groupRows, key) => {
+    const representativePackSize =
+      availabilityByItemId.get(groupRows[0].record_item_id)?.packSize || 1;
 
-    if (enteredUnits > availableUnits) {
+    const totalAvailableForGroup = groupRows.reduce((sum, row) => {
+      const availability = availabilityByItemId.get(row.record_item_id);
+      return sum + (availability?.totalUnitsAvailable ?? 0);
+    }, 0);
+
+    const consumedEntry = consumedMap.get(key);
+    const consumedUnits = consumedEntry?.consumedUnits ?? 0;
+    const availableUnits = Math.max(totalAvailableForGroup - consumedUnits, 0);
+
+    const enteredUnitsTotal = groupRows.reduce((sum, row) => {
+      const availability = availabilityByItemId.get(row.record_item_id);
+      const packSize = availability?.packSize || 1;
+      const parsedEntered = parseFloat(row.accepted_qty_in_units);
+      const entered = Number.isFinite(parsedEntered)
+        ? parsedEntered
+        : (row.accepted_pack_qty || 0) * packSize;
+      return sum + entered;
+    }, 0);
+
+    if (enteredUnitsTotal > availableUnits) {
+      const linkedSupplyDeliveryIds = consumedEntry?.supplyDeliveryIds ?? [];
+      const linkedRecordItemDeliveryIds = linkedSupplyDeliveryIds
+        .map((id) => supplyDeliveryIdToRecordItemDeliveryId.get(id))
+        .filter((id): id is string => !!id);
+
       discrepancies.push({
-        drug_name: row.eaushadhi_drug_name || row.product_knowledge_name,
-        available_qty: availableUnits / (packSize || 1),
-        accepted_qty: enteredUnits / (packSize || 1),
-        pack_size: packSize,
-        supply_delivery_ids: [],
-        record_item_delivery_ids: [],
-        record_item_id: row.record_item_id,
+        drug_name:
+          groupRows[0].eaushadhi_drug_name || groupRows[0].product_knowledge_name,
+        available_qty: availableUnits / (representativePackSize || 1),
+        accepted_qty: enteredUnitsTotal / (representativePackSize || 1),
+        pack_size: representativePackSize,
+        supply_delivery_ids: linkedSupplyDeliveryIds,
+        record_item_delivery_ids: linkedRecordItemDeliveryIds,
+        record_item_ids: groupRows.map((r) => r.record_item_id),
       });
     }
   });
@@ -1161,6 +1240,28 @@ export default function AddSupplyDeliveryForm({
     enabled: !!facilityId,
   });
 
+  const { data: supplyDeliveriesData } = useQuery({
+    queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+    queryFn: () =>
+      request<SupplyDeliveryListResponse>(
+        `/api/v1/supply_delivery/`,
+        HttpMethod.GET,
+        {
+          order: deliveryOrderId,
+          facility: facilityId,
+          ordering: "created_date",
+          limit: 1000,
+        },
+      ),
+    enabled: !!deliveryOrderId && !!facilityId,
+  });
+
+  const consumedMap = useMemo(
+    () => buildConsumedMap(supplyDeliveriesData?.results ?? []),
+    [supplyDeliveriesData],
+  );
+
+
   const supplierWarehouseName = useMemo(() => {
     if (!supplierId || !instituteMappings?.results?.[0]) return null;
 
@@ -1308,10 +1409,24 @@ export default function AddSupplyDeliveryForm({
     return map;
   }, [defaultMappingsData, paginationInProgress]);
 
+
+
   const itemAvailabilityMap = useMemo(() => {
     const map = new Map<string, ItemAvailability>();
     allInwardItems.forEach((item) => {
       map.set(item.id, getItemAvailability(item));
+    });
+    return map;
+  }, [allInwardItems]);
+
+  const supplyDeliveryIdToRecordItemDeliveryId = useMemo(() => {
+    const map = new Map<string, string>();
+    allInwardItems.forEach((item) => {
+      item.item_deliveries.forEach((delivery) => {
+        if (delivery.supply_delivery_id) {
+          map.set(delivery.supply_delivery_id, delivery.id);
+        }
+      });
     });
     return map;
   }, [allInwardItems]);
@@ -1343,11 +1458,6 @@ export default function AddSupplyDeliveryForm({
 
     try {
       const filteredItems = inwardRecord.items;
-
-      const newDiscrepancies = computeDiscrepancies(
-        filteredItems,
-        deliveryOrderId,
-      );
 
       const newRows = filteredItems
         .map((item) => {
@@ -1389,7 +1499,6 @@ export default function AddSupplyDeliveryForm({
         .filter((row): row is RowItem => row !== null && row.pack_qty > 0);
 
       setRows(newRows);
-      setDiscrepancies(newDiscrepancies);
       setPrefillError("");
     } catch (err) {
       console.error("Error prefilling data:", err);
@@ -1488,6 +1597,7 @@ export default function AddSupplyDeliveryForm({
     }
 
     const deliveryInputs: RowDeliveryInput[] = rowsToSave.map((row) => ({
+      productKnowledgeId: row.product_knowledge_id,
       productKnowledgeSlug: row.product_knowledge_slug,
       productKnowledgeName: row.product_knowledge_name,
       chargeItemCategorySlug: row.charge_item_category_slug,
@@ -1510,7 +1620,6 @@ export default function AddSupplyDeliveryForm({
       destination,
       deliveryOrderId,
       recordDeliveryId: recordDeliveryId.current,
-      eaushadhiProductKnowledgeId: rowsToSave[0]?.product_knowledge_id || "",
     };
 
     for (const chunk of chunks) {
@@ -1612,13 +1721,13 @@ export default function AddSupplyDeliveryForm({
   }
 
   async function handleMarkDiscrepanciesAsError() {
-    const historical = discrepancies.filter((d) => !d.record_item_id);
-    const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
+    const historical = discrepancies.filter((d) => !d.record_item_ids?.length);
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
 
-    const allSupplyDeliveryIds = historical.flatMap(
+    const allSupplyDeliveryIds = discrepancies.flatMap(
       (d) => d.supply_delivery_ids,
     );
-    const allRecordItemDeliveryIds = historical.flatMap(
+    const allRecordItemDeliveryIds = discrepancies.flatMap(
       (d) => d.record_item_delivery_ids,
     );
 
@@ -1656,8 +1765,9 @@ export default function AddSupplyDeliveryForm({
       if (inputOnly.length > 0) {
         const overrideMap = new Map<string, "SOURCE_REVERSED">();
         inputOnly.forEach((d) => {
-          if (d.record_item_id)
-            overrideMap.set(d.record_item_id, "SOURCE_REVERSED");
+          d.record_item_ids?.forEach((id) =>
+            overrideMap.set(id, "SOURCE_REVERSED"),
+          );
         });
         await saveRows(rows, overrideMap);
       }
@@ -1665,18 +1775,13 @@ export default function AddSupplyDeliveryForm({
       toast.success(t("supply_form_marked_as_error_success"));
       setDiscrepancies([]);
 
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["inwardRecord", inwardRecordId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["supplyDeliveries", deliveryOrderId],
-        }),
-      ]);
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
 
       if (inputOnly.length > 0) {
         setRows([]);
-        refreshCachedInwardItems();
+        // refreshCachedInwardItems();
         onSuccess();
       }
     } catch (err) {
@@ -1688,13 +1793,13 @@ export default function AddSupplyDeliveryForm({
   }
 
   async function handleMarkDiscrepanciesAsAccepted() {
-    const historical = discrepancies.filter((d) => !d.record_item_id);
-    const inputOnly = discrepancies.filter((d) => !!d.record_item_id);
+    const historical = discrepancies.filter((d) => !d.record_item_ids?.length);
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
 
-    const allSupplyDeliveryIds = historical.flatMap(
+    const allSupplyDeliveryIds = discrepancies.flatMap(
       (d) => d.supply_delivery_ids,
     );
-    const allRecordItemDeliveryIds = historical.flatMap(
+    const allRecordItemDeliveryIds = discrepancies.flatMap(
       (d) => d.record_item_delivery_ids,
     );
 
@@ -1724,8 +1829,9 @@ export default function AddSupplyDeliveryForm({
       if (inputOnly.length > 0) {
         const overrideMap = new Map<string, "ACCEPTED_OVERRIDE">();
         inputOnly.forEach((d) => {
-          if (d.record_item_id)
-            overrideMap.set(d.record_item_id, "ACCEPTED_OVERRIDE");
+          d.record_item_ids?.forEach((id) =>
+            overrideMap.set(id, "ACCEPTED_OVERRIDE"),
+          );
         });
         await saveRows(rows, overrideMap);
       }
@@ -1733,18 +1839,13 @@ export default function AddSupplyDeliveryForm({
       toast.success(t("supply_form_marked_as_accepted_success"));
       setDiscrepancies([]);
 
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["inwardRecord", inwardRecordId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["supplyDeliveries", deliveryOrderId],
-        }),
-      ]);
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
 
       if (inputOnly.length > 0) {
         setRows([]);
-        refreshCachedInwardItems();
+        // refreshCachedInwardItems();
         onSuccess();
       }
     } catch (err) {
@@ -1789,6 +1890,8 @@ export default function AddSupplyDeliveryForm({
     const inputDiscrepancies = computeInputQuantityDiscrepancies(
       rows,
       itemAvailabilityMap,
+      consumedMap,
+      supplyDeliveryIdToRecordItemDeliveryId,
     );
     const preSaveDiscrepancies = [
       ...historicalDiscrepancies,
@@ -1804,12 +1907,12 @@ export default function AddSupplyDeliveryForm({
 
     try {
       await saveRows(rows);
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
 
       toast.success(t("supply_form_save_success"));
       setRows([]);
-
-      refreshCachedInwardItems();
-
       onSuccess();
     } catch (err) {
       reportSaveError(err);
