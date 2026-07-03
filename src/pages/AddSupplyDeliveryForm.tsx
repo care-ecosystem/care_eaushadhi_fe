@@ -201,6 +201,7 @@ interface DiscrepancyItem {
   supply_delivery_ids: string[];
   record_item_delivery_ids: string[];
   record_item_id?: string;
+  record_item_ids?: string[];
 }
 
 interface InwardItem {
@@ -1712,16 +1713,7 @@ export default function AddSupplyDeliveryForm({
     }
   }
 
-  function refreshCachedInwardItems() {
-    setAllInwardItems([]);
-    setInwardRecordMeta(null);
-    initializationRef.current = false;
-    setPaginationInProgress(true);
-    fetchAllInwardRecordPages().finally(() => {});
-  }
-
   async function handleMarkDiscrepanciesAsError() {
-    const historical = discrepancies.filter((d) => !d.record_item_ids?.length);
     const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
 
     const allSupplyDeliveryIds = discrepancies.flatMap(
@@ -1781,7 +1773,6 @@ export default function AddSupplyDeliveryForm({
 
       if (inputOnly.length > 0) {
         setRows([]);
-        // refreshCachedInwardItems();
         onSuccess();
       }
     } catch (err) {
@@ -1793,7 +1784,6 @@ export default function AddSupplyDeliveryForm({
   }
 
   async function handleMarkDiscrepanciesAsAccepted() {
-    const historical = discrepancies.filter((d) => !d.record_item_ids?.length);
     const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
 
     const allSupplyDeliveryIds = discrepancies.flatMap(
@@ -1845,7 +1835,6 @@ export default function AddSupplyDeliveryForm({
 
       if (inputOnly.length > 0) {
         setRows([]);
-        // refreshCachedInwardItems();
         onSuccess();
       }
     } catch (err) {
