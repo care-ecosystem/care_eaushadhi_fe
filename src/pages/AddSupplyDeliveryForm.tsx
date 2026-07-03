@@ -1246,17 +1246,10 @@ export default function AddSupplyDeliveryForm({
           const pageNumber = Math.floor(offset / INWARD_RECORDS_PAGE_SIZE) + 1;
           const totalPages = Math.ceil(totalCount / INWARD_RECORDS_PAGE_SIZE);
 
-          console.log(
-            `[Pagination] Page ${pageNumber}/${totalPages}: Fetched ${pageResponse.items?.length || 0} items. Total so far: ${allItems.length}/${totalCount}`
-          );
-
           offset += INWARD_RECORDS_PAGE_SIZE;
 
         } while (offset < totalCount);  
 
-        console.log(
-          `[Pagination] All ${allItems.length} items fetched successfully!`
-        );
         setPaginationInProgress(false);
       } catch (err) {
         console.error("Error fetching inward record pages:", err);
@@ -1267,14 +1260,12 @@ export default function AddSupplyDeliveryForm({
   );
 
   const handleCancel = useCallback(() => {
-    console.log("[Cancel] User clicked Cancel button");
     paginationCancelledRef.current = true;
     setPaginationInProgress(false);
     setRows([]);
     setAllInwardItems([]);
     setInwardRecordMeta(null);
     initializationRef.current = false;
-    console.log("[Cancel] Pagination exited");
   }, []);
 
   useEffect(() => {
@@ -1435,7 +1426,6 @@ export default function AddSupplyDeliveryForm({
   }) => {
     const existingId = getRecordDeliveryIdFromUrl();
     if (existingId) {
-      console.log("✓ Using recordDeliveryId from URL params:", existingId);
       return { id: existingId };
     }
 
@@ -1447,7 +1437,6 @@ export default function AddSupplyDeliveryForm({
       );
 
       addRecordDeliveryIdToUrl(response.id);
-      console.log("✓ Created and cached recordDeliveryId in URL:", response.id);
 
       return response;
     } catch (err: any) {
@@ -1457,7 +1446,6 @@ export default function AddSupplyDeliveryForm({
         // Try to get from URL params as fallback
         const cachedId = getRecordDeliveryIdFromUrl();
         if (cachedId) {
-          console.log("✓ Got recordDeliveryId from URL (409 fallback):", cachedId);
           return { id: cachedId };
         }
         toast.error("This delivery order is already linked elsewhere. Please use a different delivery order.");
@@ -1477,7 +1465,6 @@ export default function AddSupplyDeliveryForm({
         delivery_order_id: deliveryOrderId,
       });
       recordDeliveryId.current = response.id;
-      console.log("✓ Got recordDeliveryId:", response.id);
     }
 
     if (!recordDeliveryId.current) {
@@ -1530,6 +1517,8 @@ export default function AddSupplyDeliveryForm({
 
         const chainResult = chainResults.find((r) => r.chainId === chainIdx);
         const inwardItemId = chainResult?.inwardItemId;
+        const supplyDeliveryId = chainResult?.supplyDeliveryId;
+
         if (inwardItemId) {
           overridePatches.push(
             request(
@@ -1542,6 +1531,22 @@ export default function AddSupplyDeliveryForm({
           console.warn(
             `saveRows: could not resolve inwardItemId for chain ${chainIdx} to apply status override "${overrideStatus}"`,
           );
+        }
+
+        if (overrideStatus === "SOURCE_REVERSED") {
+          if (supplyDeliveryId) {
+            overridePatches.push(
+              request(
+                `/api/v1/supply_delivery/${supplyDeliveryId}/`,
+                HttpMethod.PATCH,
+                { status: "entered_in_error" },
+              ),
+            );
+          } else {
+            console.warn(
+              `saveRows: could not resolve supplyDeliveryId for chain ${chainIdx} to mark supply_delivery as entered_in_error`,
+            );
+          }
         }
       });
 
