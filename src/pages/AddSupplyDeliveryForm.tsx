@@ -703,15 +703,6 @@ function ProductMappingSelector({
   const searchResults = mappingsData?.results ?? [];
   const canCreate = mappingsData?.can_create ?? false;
 
-  const prefetchMappings = useCallback(() => {
-    if (!eaushadhiDrugId) return;
-    queryClient.prefetchQuery({
-      queryKey: mappingsQueryKey,
-      queryFn: mappingsQueryFn,
-      staleTime: 5 * 60 * 1000,
-    });
-  }, [queryClient, mappingsQueryKey, mappingsQueryFn, eaushadhiDrugId]);
-
   // Initialize with autofill mapping if available
   useEffect(() => {
     if (
@@ -742,7 +733,7 @@ function ProductMappingSelector({
         onOpenChange={handleOpenChange}
         disabled={isLoading || !eaushadhiDrugId}
       >
-        <SelectTrigger size="sm" className="w-full" onClick={prefetchMappings}>
+        <SelectTrigger size="sm" className="w-full">
           <SelectValue
             placeholder={
               !eaushadhiDrugId
@@ -761,12 +752,6 @@ function ProductMappingSelector({
           position="popper"
           className="w-(--radix-select-trigger-width)"
         >
-          {isSearching && (
-            <div className="flex items-center justify-center py-4 text-xs text-gray-500">
-              <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
-              {t("supply_form_searching")}
-            </div>
-          )}
           {!isSearching && searchResults.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-4 px-2">
               <p className="text-xs text-gray-500">
