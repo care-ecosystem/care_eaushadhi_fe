@@ -273,7 +273,9 @@ export default function EAusdhadhiDeliveryCreate({
               disabled={meta?.disable_inward_date}
             />
             <p className="text-xs text-gray-500">
-              {t("fetch_page_inward_date_hint")}
+              {meta?.disable_inward_date
+                ? t("fetch_page_inward_date_disabled_hint")
+                : t("fetch_page_inward_date_enabled_hint")}
             </p>
           </div>
         </div>
