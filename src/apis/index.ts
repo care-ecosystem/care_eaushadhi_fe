@@ -49,6 +49,7 @@ export type InstituteMapping = {
   supplier_mappings: SupplierMapping[];
 };
 
+export type DeliveryStatus = "ACCEPTED" | "ACCEPTED_OVERRIDE" | "SOURCE_REVERSED";
 
 /** Page-level context shared by every row in one Save. */
 export interface RowDeliveryBatchContext {
@@ -57,11 +58,11 @@ export interface RowDeliveryBatchContext {
   deliveryOrderId: string; // supply order id
   // eAushadhi record-item-delivery inputs:
   recordDeliveryId: string;
-  eaushadhiProductKnowledgeId: string;
 }
 
 /** The per-row inputs the builder needs (mapped from a RowItem). */
 export interface RowDeliveryInput {
+  productKnowledgeId: string;
   productKnowledgeSlug: string;
   productKnowledgeName: string;
   chargeItemCategorySlug: string;
@@ -75,6 +76,7 @@ export interface RowDeliveryInput {
   /** If the row already maps to an existing product (not a new batch). */
   existingProductId?: string;
   isNewBatch: boolean;
+  deliveryStatus?: DeliveryStatus;
 }
 
 /**
@@ -148,8 +150,9 @@ export function buildRowDeliveryBatch(
       supply_delivery_id: null,
       record_delivery_id: ctx.recordDeliveryId,
       product_id: reuseExistingProduct ? input.existingProductId : null,
-      product_knowledge_id: ctx.eaushadhiProductKnowledgeId,
+      product_knowledge_id: input.productKnowledgeId,
       quantity_received: Number(input.quantity) || 0,
+      status: input.deliveryStatus ?? "ACCEPTED",
     },
     replacements: [
       {

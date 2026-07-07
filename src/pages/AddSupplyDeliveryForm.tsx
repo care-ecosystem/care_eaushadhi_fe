@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import {
   Trash2,
   AlertCircle,
@@ -8,6 +8,7 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -38,9 +39,8 @@ import {
   buildChainBatch,
   chunkRows,
   extractChainResults,
-  SUPER_BATCH_CHAIN_SIZE,
 } from "@/apis/chainBuilder";
-import { I18NNAMESPACE } from "@/lib/contants";
+import { I18NNAMESPACE, INWARD_RECORDS_PAGE_SIZE } from "@/lib/contants";
 import {
   formatDateForEaushadhiAPI,
   extractGenericName,
@@ -56,9 +56,27 @@ interface ErrorDetail {
   type?: string;
 }
 
-function extractErrorDetailsFromSuperBatch(
-  results: any[]
-): ErrorDetail[] {
+interface SupplyDeliveryRecord {
+  id: string;
+  status: string;
+  supplied_item_quantity: string;
+  supplied_item: {
+    batch: { lot_number: string };
+    product_knowledge: { id: string };
+  };
+}
+
+interface SupplyDeliveryListResponse {
+  count: number;
+  results: SupplyDeliveryRecord[];
+}
+
+interface ConsumedEntry {
+  consumedUnits: number;
+  supplyDeliveryIds: string[];
+}
+
+function extractErrorDetailsFromSuperBatch(results: any[]): ErrorDetail[] {
   const errors: ErrorDetail[] = [];
 
   results.forEach((result) => {
@@ -69,17 +87,21 @@ function extractErrorDetailsFromSuperBatch(
         data.errors.forEach((err: any) => {
           if (err.type === "validation_error" && err.msg) {
             // err.msg is an object like { quantity_received: [message] }
-            Object.entries(err.msg).forEach(([field, messages]: [string, any]) => {
-              const fieldMessages = Array.isArray(messages) ? messages : [messages];
-              fieldMessages.forEach((msg: string) => {
-                errors.push({
-                  reference_id: result.reference_id,
-                  field,
-                  message: msg,
-                  type: err.type,
+            Object.entries(err.msg).forEach(
+              ([field, messages]: [string, any]) => {
+                const fieldMessages = Array.isArray(messages)
+                  ? messages
+                  : [messages];
+                fieldMessages.forEach((msg: string) => {
+                  errors.push({
+                    reference_id: result.reference_id,
+                    field,
+                    message: msg,
+                    type: err.type,
+                  });
                 });
-              });
-            });
+              },
+            );
           } else if (err.msg && typeof err.msg === "string") {
             errors.push({
               reference_id: result.reference_id,
@@ -88,14 +110,12 @@ function extractErrorDetailsFromSuperBatch(
             });
           }
         });
-      }
-      else if (data?.detail && typeof data.detail === "string") {
+      } else if (data?.detail && typeof data.detail === "string") {
         errors.push({
           reference_id: result.reference_id,
           message: data.detail,
         });
-      }
-      else if (data?.message && typeof data.message === "string") {
+      } else if (data?.message && typeof data.message === "string") {
         errors.push({
           reference_id: result.reference_id,
           message: data.message,
@@ -107,8 +127,10 @@ function extractErrorDetailsFromSuperBatch(
   return errors;
 }
 
-
-function formatErrorMessage(errors: ErrorDetail[], t: (key: string) => string): string {
+function formatErrorMessage(
+  errors: ErrorDetail[],
+  t: (key: string) => string,
+): string {
   if (errors.length === 0) return t("supply_form_unexpected_error");
 
   const byRef = new Map<string, ErrorDetail[]>();
@@ -168,6 +190,7 @@ interface ItemDelivery {
   quantity_received: string;
   supply_delivery_id?: string;
   record_delivery_id?: string;
+  delivery_order_id?: string;
 }
 
 interface DiscrepancyItem {
@@ -177,6 +200,8 @@ interface DiscrepancyItem {
   pack_size: number;
   supply_delivery_ids: string[];
   record_item_delivery_ids: string[];
+  record_item_id?: string;
+  record_item_ids?: string[];
 }
 
 interface InwardItem {
@@ -199,14 +224,12 @@ interface Delivery {
 }
 
 interface InwardRecord {
+  meta: Record<string, any>;
   id: string;
   facility_id: string;
   inward_date: string;
-  sync_status: string;
-  items_initial_count: number;
-  items_current_count: number;
+  count: number;
   items: InwardItem[];
-  deliveries: Delivery[];
 }
 
 interface SupplierMapping {
@@ -300,6 +323,174 @@ function toSlug(value: string, maxLength: number): string {
     .slice(0, maxLength);
 }
 
+interface ItemAvailability {
+  packSize: number;
+  totalUnitsAvailable: number;
+  consumedUnits: number;
+  availableUnits: number;
+}
+
+function consumedKey(productKnowledgeId: string, batchLotNumber: string): string {
+  return `${productKnowledgeId}::${batchLotNumber}`;
+}
+
+function buildConsumedMap(
+  records: SupplyDeliveryRecord[],
+): Map<string, ConsumedEntry> {
+  const map = new Map<string, ConsumedEntry>();
+
+  for (const sd of records) {
+    // entered_in_error deliveries no longer count against availability
+    if (sd.status === "entered_in_error") continue;
+
+    const key = consumedKey(
+      sd.supplied_item.product_knowledge.id,
+      sd.supplied_item.batch.lot_number,
+    );
+    const qty = parseFloat(sd.supplied_item_quantity) || 0;
+
+    const existing = map.get(key);
+    if (existing) {
+      existing.consumedUnits += qty;
+      existing.supplyDeliveryIds.push(sd.id);
+    } else {
+      map.set(key, { consumedUnits: qty, supplyDeliveryIds: [sd.id] });
+    }
+  }
+
+  return map;
+}
+
+function getItemAvailability(item: InwardItem): ItemAvailability {
+  const packSize = parseFloat(item.unit_pack) || 1;
+  const receivedQty = parseFloat(item.quantity_received_current) || 0;
+
+  const totalUnitsAvailable = (() => {
+    const raw = item.quantity_in_units;
+    const parsed =
+      raw !== undefined && raw !== null && raw !== "" ? parseFloat(raw) : NaN;
+    return Number.isFinite(parsed) ? parsed : receivedQty * packSize;
+  })();
+
+  const consumedUnits = item.item_deliveries.reduce((sum, delivery) => {
+    if (
+      delivery.status === "ACCEPTED" ||
+      delivery.status === "ACCEPTED_OVERRIDE"
+    ) {
+      return sum + (parseFloat(delivery.quantity_received) || 0);
+    }
+    return sum;
+  }, 0);
+
+  return {
+    packSize,
+    totalUnitsAvailable,
+    consumedUnits,
+    availableUnits: Math.max(totalUnitsAvailable - consumedUnits, 0),
+  };
+}
+
+function computeDiscrepancies(
+  items: InwardItem[],
+  deliveryOrderId: string,
+): DiscrepancyItem[] {
+  const currentRecordDeliveryId = items
+    .flatMap((it) => it.item_deliveries)
+    .find((d) => d.delivery_order_id === deliveryOrderId)?.record_delivery_id;
+
+  if (!currentRecordDeliveryId) return [];
+
+  const discrepancies: DiscrepancyItem[] = [];
+
+  items.forEach((item) => {
+    const { packSize, totalUnitsAvailable, consumedUnits } =
+      getItemAvailability(item);
+
+    if (consumedUnits > totalUnitsAvailable) {
+      const activeDeliveries = item.item_deliveries.filter(
+        (d) =>
+          d.record_delivery_id === currentRecordDeliveryId &&
+          d.status === "ACCEPTED",
+      );
+
+      if (activeDeliveries.length > 0) {
+        discrepancies.push({
+          drug_name: item.drug_name,
+          available_qty: totalUnitsAvailable / (packSize || 1),
+          accepted_qty: consumedUnits / (packSize || 1),
+          pack_size: packSize,
+          supply_delivery_ids: activeDeliveries.map(
+            (d) => d.supply_delivery_id as string,
+          ),
+          record_item_delivery_ids: activeDeliveries.map((d) => d.id),
+        });
+      }
+    }
+  });
+
+  return discrepancies;
+}
+
+function computeInputQuantityDiscrepancies(
+  rows: RowItem[],
+  availabilityByItemId: Map<string, ItemAvailability>,
+  consumedMap: Map<string, ConsumedEntry>,
+  supplyDeliveryIdToRecordItemDeliveryId: Map<string, string>,
+): DiscrepancyItem[] {
+  const discrepancies: DiscrepancyItem[] = [];
+  const rowsByKey = new Map<string, RowItem[]>();
+  rows.forEach((row) => {
+    if (!row.product_knowledge_id) return;
+    const key = consumedKey(row.product_knowledge_id, row.batch_number);
+    if (!rowsByKey.has(key)) rowsByKey.set(key, []);
+    rowsByKey.get(key)!.push(row);
+  });
+
+  rowsByKey.forEach((groupRows, key) => {
+    const representativePackSize =
+      availabilityByItemId.get(groupRows[0].record_item_id)?.packSize || 1;
+
+    const totalAvailableForGroup = groupRows.reduce((sum, row) => {
+      const availability = availabilityByItemId.get(row.record_item_id);
+      return sum + (availability?.totalUnitsAvailable ?? 0);
+    }, 0);
+
+    const consumedEntry = consumedMap.get(key);
+    const consumedUnits = consumedEntry?.consumedUnits ?? 0;
+    const availableUnits = Math.max(totalAvailableForGroup - consumedUnits, 0);
+
+    const enteredUnitsTotal = groupRows.reduce((sum, row) => {
+      const availability = availabilityByItemId.get(row.record_item_id);
+      const packSize = availability?.packSize || 1;
+      const parsedEntered = parseFloat(row.accepted_qty_in_units);
+      const entered = Number.isFinite(parsedEntered)
+        ? parsedEntered
+        : (row.accepted_pack_qty || 0) * packSize;
+      return sum + entered;
+    }, 0);
+
+    if (enteredUnitsTotal > availableUnits) {
+      const linkedSupplyDeliveryIds = consumedEntry?.supplyDeliveryIds ?? [];
+      const linkedRecordItemDeliveryIds = linkedSupplyDeliveryIds
+        .map((id) => supplyDeliveryIdToRecordItemDeliveryId.get(id))
+        .filter((id): id is string => !!id);
+
+      discrepancies.push({
+        drug_name:
+          groupRows[0].eaushadhi_drug_name || groupRows[0].product_knowledge_name,
+        available_qty: availableUnits / (representativePackSize || 1),
+        accepted_qty: enteredUnitsTotal / (representativePackSize || 1),
+        pack_size: representativePackSize,
+        supply_delivery_ids: linkedSupplyDeliveryIds,
+        record_item_delivery_ids: linkedRecordItemDeliveryIds,
+        record_item_ids: groupRows.map((r) => r.record_item_id),
+      });
+    }
+  });
+
+  return discrepancies;
+}
+
 // ─── Create Product Knowledge Dialog ──────────────────────────────────────────
 function CreateProductKnowledgeDialog({
   facilityId,
@@ -309,7 +500,6 @@ function CreateProductKnowledgeDialog({
   onOpenChange,
   onCreated,
   suggestedBaseUnitCode,
-  suggestedName,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
@@ -318,7 +508,6 @@ function CreateProductKnowledgeDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
-  suggestedName?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const [name, setName] = useState("");
@@ -546,83 +735,68 @@ function ProductMappingSelector({
   eaushadhiDrugId,
   eaushadhiDrugName,
   value,
+  selectedLabel,
   isLoading,
   onSelect,
   suggestedBaseUnitCode,
-  suggestedName,
   autofillMapping,
 }: {
   facilityId: string;
   eaushadhiDrugId: string;
   eaushadhiDrugName: string;
   value: string;
+  selectedLabel?: string;
   isLoading: boolean;
   onSelect: (mapping: ProductMapping) => void;
   suggestedBaseUnitCode?: string;
-  suggestedName?: string;
   autofillMapping?: ProductMapping;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
   const { meta } = useInstituteMapping();
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
-  const [searchResults, setSearchResults] = useState<ProductMapping[]>([]);
-  const [canCreate, setCanCreate] = useState<boolean>(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+
+  const mappingsQueryKey = [
+    "productMappingsSearch",
+    facilityId,
+    eaushadhiDrugId,
+  ];
+
+  const mappingsQueryFn = useCallback(
+    () =>
+      request<{ results: ProductMapping[]; can_create: boolean }>(
+        `/api/care_eaushadhi/product-mappings/search/`,
+        HttpMethod.GET,
+        { facility_id: facilityId, eaushadhi_drug_id: eaushadhiDrugId },
+      ),
+    [facilityId, eaushadhiDrugId],
+  );
+
+  const { data: mappingsData, isFetching: isSearching } = useQuery({
+    queryKey: mappingsQueryKey,
+    queryFn: mappingsQueryFn,
+    enabled: !!eaushadhiDrugId && isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const searchResults = mappingsData?.results ?? [];
+  const canCreate = mappingsData?.can_create ?? false;
 
   // Initialize with autofill mapping if available
   useEffect(() => {
     if (
       autofillMapping &&
-      eaushadhiDrugId === autofillMapping.eaushadhi_drug_id
+      eaushadhiDrugId === autofillMapping.eaushadhi_drug_id &&
+      !value
     ) {
-      if (!hasFetched) {
-        setSearchResults([autofillMapping]);
-      }
-      if (!value) {
-        onSelect(autofillMapping);
-      }
+      onSelect(autofillMapping);
     }
   }, [autofillMapping, eaushadhiDrugId, value, onSelect]);
 
-  // Fetch product mappings when dropdown opens (search behavior)
-  const fetchMappings = useCallback(async (): Promise<ProductMapping[]> => {
-    if (!eaushadhiDrugId || isSearching) return [];
-
-    setIsSearching(true);
-    setCanCreate(false);
-    try {
-      const response = await request<{
-        results: ProductMapping[];
-        can_create: boolean;
-      }>(`/api/care_eaushadhi/product-mappings/search/`, HttpMethod.GET, {
-        facility_id: facilityId,
-        eaushadhi_drug_id: eaushadhiDrugId,
-      });
-      setSearchResults(response.results || []);
-      setCanCreate(response.can_create ?? false);
-      return response.results || [];
-    } catch (err) {
-      console.error("Error fetching product mappings:", err);
-      toast.error(t("supply_form_load_products_error"));
-      setSearchResults([]);
-      setCanCreate(false);
-      return [];
-    } finally {
-      setIsSearching(false);
-    }
-  }, [facilityId, eaushadhiDrugId, isSearching, t]);
-
-  // Fetch mappings when dropdown opens
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
-    if (open && !hasFetched && !isSearching) {
-      fetchMappings();
-      setHasFetched(true);
-    }
   };
-
 
   return (
     <>
@@ -648,18 +822,16 @@ function ProductMappingSelector({
                   ? t("supply_form_loading")
                   : t("supply_form_select_product")
             }
-          />
+          >
+            {value
+              ? selectedLabel || t("supply_form_select_product")
+              : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent
           position="popper"
-          className="w-[var(--radix-select-trigger-width)]"
+          className="w-(--radix-select-trigger-width)"
         >
-          {isSearching && (
-            <div className="flex items-center justify-center py-4 text-xs text-gray-500">
-              <div className="animate-spin rounded-full h-4 w-4 border border-gray-200 border-t-gray-900 mr-2" />
-              {t("supply_form_searching")}
-            </div>
-          )}
           {!isSearching && searchResults.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-4 px-2">
               <p className="text-xs text-gray-500">
@@ -667,67 +839,89 @@ function ProductMappingSelector({
               </p>
             </div>
           )}
-          {!isSearching && (() => {
-            const imported = searchResults.filter(m => m.mapping_type === "BULK_IMPORT");
-            const suggestions = searchResults
-              .filter(m => m.mapping_type !== "BULK_IMPORT")
-              .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0));
-
-            const renderGroup = (label: string, items: typeof searchResults) =>
-              items.length > 0 && (
-                <SelectGroup key={label}>
-                  <SelectLabel className="text-xs text-gray-400 font-medium px-2 py-1">
-                    {label}
-                  </SelectLabel>
-                  {items.map((mapping) => (
-                    <SelectPrimitive.Item
-                      key={mapping.id}
-                      value={mapping.id}
-                      className="focus:bg-gray-100 focus:text-gray-900 relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 whitespace-normal wrap-break-word"
-                    >
-                      <span className="absolute right-2 flex size-3.5 items-center justify-center">
-                        <SelectPrimitive.ItemIndicator>
-                          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polyline points="20 6 9 17 4 12" /></svg>
-                        </SelectPrimitive.ItemIndicator>
-                      </span>
-                      <SelectPrimitive.ItemText>
-                        {mapping.product_knowledge.name}
-                      </SelectPrimitive.ItemText>
-                      {(mapping.usage_count ?? 0) > 0 && (
-                        <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
-                          {mapping.usage_count}&nbsp;{t("times")}
-                        </span>
-                      )}
-                    </SelectPrimitive.Item>
-                  ))}
-                </SelectGroup>
+          {!isSearching &&
+            (() => {
+              const imported = searchResults.filter(
+                (m) => m.mapping_type === "BULK_IMPORT",
               );
+              const suggestions = searchResults
+                .filter((m) => m.mapping_type !== "BULK_IMPORT")
+                .sort((a, b) => (b.usage_count ?? 0) - (a.usage_count ?? 0));
 
-            return (
-              <>
-                {renderGroup(t("supply_form_product_group_imported"), imported)}
-                {renderGroup(t("supply_form_product_group_suggestions"), suggestions)}
-              </>
-            );
-          })()}
-          {!isSearching && canCreate && (meta?.allow_creating_product_knowledge ?? false) && (
-            <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
-              <Button
-                variant="primary"
-                size="default"
-                type="button"
-                className="w-full"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsOpen(false);
-                  setCreateDialogOpen(true);
-                }}
-              >
-                <PlusIcon className="h-4 w-4" />
-                {t("supply_form_create_product_knowledge")}
-              </Button>
-            </div>
-          )}
+              const renderGroup = (
+                label: string,
+                items: typeof searchResults,
+              ) =>
+                items.length > 0 && (
+                  <SelectGroup key={label}>
+                    <SelectLabel className="text-xs text-gray-400 font-medium px-2 py-1">
+                      {label}
+                    </SelectLabel>
+                    {items.map((mapping) => (
+                      <SelectPrimitive.Item
+                        key={mapping.id}
+                        value={mapping.id}
+                        className="focus:bg-gray-100 focus:text-gray-900 relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 whitespace-normal wrap-break-word"
+                      >
+                        <span className="absolute right-2 flex size-3.5 items-center justify-center">
+                          <SelectPrimitive.ItemIndicator>
+                            <svg
+                              className="size-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </SelectPrimitive.ItemIndicator>
+                        </span>
+                        <SelectPrimitive.ItemText>
+                          {mapping.product_knowledge.name}
+                        </SelectPrimitive.ItemText>
+                        {(mapping.usage_count ?? 0) > 0 && (
+                          <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
+                            {mapping.usage_count}&nbsp;{t("times")}
+                          </span>
+                        )}
+                      </SelectPrimitive.Item>
+                    ))}
+                  </SelectGroup>
+                );
+
+              return (
+                <>
+                  {renderGroup(
+                    t("supply_form_product_group_imported"),
+                    imported,
+                  )}
+                  {renderGroup(
+                    t("supply_form_product_group_suggestions"),
+                    suggestions,
+                  )}
+                </>
+              );
+            })()}
+          {!isSearching &&
+            canCreate &&
+            (meta?.allow_creating_product_knowledge ?? false) && (
+              <div className="flex flex-col items-center gap-2 py-2 px-2 border-t mt-1">
+                <Button
+                  variant="primary"
+                  size="default"
+                  type="button"
+                  className="w-full"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsOpen(false);
+                    setCreateDialogOpen(true);
+                  }}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  {t("supply_form_create_product_knowledge")}
+                </Button>
+              </div>
+            )}
         </SelectContent>
       </Select>
 
@@ -738,11 +932,12 @@ function ProductMappingSelector({
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         suggestedBaseUnitCode={suggestedBaseUnitCode}
-        suggestedName={suggestedName}
         onCreated={async (mapping) => {
-          setSearchResults([]);
-          const results = await fetchMappings();
-          const realMapping = results.find(
+          const refreshed = await queryClient.fetchQuery({
+            queryKey: mappingsQueryKey,
+            queryFn: mappingsQueryFn,
+          });
+          const realMapping = refreshed?.results?.find(
             (m) => m.product_knowledge.id === mapping.product_knowledge.id,
           );
           if (realMapping) onSelect(realMapping);
@@ -752,49 +947,66 @@ function ProductMappingSelector({
   );
 }
 
+function getGridTemplateColumns(
+  allowUpdatingQuantity: boolean,
+  allowDeletingInward: boolean,
+): string {
+  const cols = ["minmax(280px, 1fr)", "150px", "150px", "96px", "96px"];
+  if (allowUpdatingQuantity) cols.push("128px");
+  cols.push("128px");
+  if (allowDeletingInward) cols.push("64px");
+  return cols.join(" ");
+}
+
+function getMinTableWidth(
+  allowUpdatingQuantity: boolean,
+  allowDeletingInward: boolean,
+): number {
+  let total = 280 + 150 + 150 + 96 + 96;
+  if (allowUpdatingQuantity) total += 128;
+  total += 128;
+  if (allowDeletingInward) total += 64;
+  return total;
+}
+
 // ─── Delivery Row ──────────────────────────────────────────────────────────
-function DeliveryRow({
+
+function DeliveryRowCellsImpl({
   facilityId,
   row,
-  onChange,
-  onRemove,
+  updateRow,
+  removeRow,
   allowDeletingInward,
   allowUpdatingQuantity,
   autofillMapping,
 }: {
   facilityId: string;
   row: RowItem;
-  onChange: (updated: RowItem) => void;
-  onRemove: () => void;
+  updateRow: (id: string, updated: RowItem) => void;
+  removeRow: (id: string) => void;
   allowDeletingInward: boolean;
   allowUpdatingQuantity: boolean;
   autofillMapping?: ProductMapping;
   suggestedBaseUnitCode?: string;
 }) {
   const { t } = useTranslation(I18NNAMESPACE);
+  const queryClient = useQueryClient();
+
+  const onChange = useCallback(
+    (updated: RowItem) => updateRow(row.record_item_id, updated),
+    [updateRow, row.record_item_id],
+  );
+
+  const onRemove = useCallback(
+    () => removeRow(row.record_item_id),
+    [removeRow, row.record_item_id],
+  );
+
   const set = useCallback(
     (field: keyof RowItem, value: unknown) =>
       onChange({ ...row, [field]: value } as RowItem),
     [row, onChange],
   );
-
-  const queryClient = useQueryClient();
-
-  // Auto-calculate quantity from pack size and pack quantity
-  useEffect(() => {
-    const qty = (row.pack_size || 1) * (row.pack_qty || 1);
-    if (String(qty) !== row.quantity) {
-      onChange({ ...row, quantity: String(qty) });
-    }
-  }, [row.pack_size, row.pack_qty]); // eslint-disable-line
-
-  // Auto-calculate accepted quantity
-  useEffect(() => {
-    const acceptedQty = (row.pack_size || 1) * (row.accepted_pack_qty || 0);
-    if (String(acceptedQty) !== row.accepted_qty_in_units) {
-      onChange({ ...row, accepted_qty_in_units: String(acceptedQty) });
-    }
-  }, [row.pack_size, row.accepted_pack_qty]); // eslint-disable-line
 
   const handleSelectMapping = (mapping: ProductMapping) => {
     queryClient.removeQueries({
@@ -810,29 +1022,28 @@ function DeliveryRow({
   };
 
   return (
-    <tr className="align-top divide-x divide-gray-100 hover:bg-gray-50/40">
-      <td className="px-2 py-2 min-w-[280px] max-w-[400px]">
+    <>
+      <div className="px-2 py-2 overflow-hidden border-r border-gray-100">
         <div className="flex flex-col gap-1">
           <ProductMappingSelector
             facilityId={facilityId}
             eaushadhiDrugId={row.eaushadhi_drug_id || ""}
             eaushadhiDrugName={row.eaushadhi_drug_name || ""}
             value={row.product_mapping_id || ""}
+            selectedLabel={row.product_knowledge_name}
             isLoading={false}
             onSelect={handleSelectMapping}
             suggestedBaseUnitCode={row.suggested_base_unit_code}
-            suggestedName={row.product_knowledge_name}
             autofillMapping={autofillMapping}
           />
           {row.eaushadhi_drug_name && (
-            // AFTER
-            <span className="text-xs text-gray-500 break-words">
+            <span className="text-xs text-gray-500 wrap-break-word">
               {t("supply_form_eaushadhi_prefix")} {row.eaushadhi_drug_name}
             </span>
           )}
         </div>
-      </td>
-      <td className="px-2 py-2 shrink-0 min-w-[150px]">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="text"
           value={row.batch_number}
@@ -840,8 +1051,8 @@ function DeliveryRow({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 min-w-[150px]">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="date"
           value={row.expiry_date}
@@ -849,45 +1060,68 @@ function DeliveryRow({
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 w-24">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="number"
           min={1}
           value={row.pack_size}
-          onChange={(e) => set("pack_size", parseInt(e.target.value) || 1)}
+          onChange={(e) => {
+            const pack_size = parseInt(e.target.value) || 1;
+            onChange({
+              ...row,
+              pack_size,
+              quantity: String(pack_size * (row.pack_qty || 1)),
+              accepted_qty_in_units: String(
+                pack_size * (row.accepted_pack_qty || 0),
+              ),
+            });
+          }}
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      <td className="px-2 py-2 shrink-0 w-24">
+      </div>
+      <div className="px-2 py-2 border-r border-gray-100">
         <Input
           type="number"
           min={1}
           value={row.pack_qty}
-          onChange={(e) => set("pack_qty", parseInt(e.target.value) || 1)}
+          onChange={(e) => {
+            const pack_qty = parseInt(e.target.value) || 1;
+            onChange({
+              ...row,
+              pack_qty,
+              quantity: String((row.pack_size || 1) * pack_qty),
+            });
+          }}
           className="h-9 text-xs w-full"
           disabled
         />
-      </td>
-      {
-        allowUpdatingQuantity && 
-        (
-          <td className="px-2 py-2 shrink-0 w-32">
-            <Input
-              type="number"
-              min={0}
-              value={row.accepted_pack_qty}
-              onChange={(e) =>
-                set("accepted_pack_qty", parseInt(e.target.value) || 0)
-              }
-              className="h-9 text-xs w-full"
-              disabled={!allowUpdatingQuantity}
-            />
-          </td>
-        )
-      }
-      <td className="px-2 py-2 shrink-0 w-32">
+      </div>
+      {allowUpdatingQuantity && (
+        <div className="px-2 py-2 border-r border-gray-100">
+          <Input
+            type="number"
+            min={0}
+            value={row.accepted_pack_qty}
+            onChange={(e) => {
+              const accepted_pack_qty = parseInt(e.target.value) || 0;
+              onChange({
+                ...row,
+                accepted_pack_qty,
+                accepted_qty_in_units: String(
+                  (row.pack_size || 1) * accepted_pack_qty,
+                ),
+              });
+            }}
+            className="h-9 text-xs w-full"
+            disabled={!allowUpdatingQuantity}
+          />
+        </div>
+      )}
+      <div
+        className={`px-2 py-2 ${allowDeletingInward ? "border-r border-gray-100" : ""}`}
+      >
         <div className="flex flex-col gap-1">
           <Input
             type="number"
@@ -901,20 +1135,31 @@ function DeliveryRow({
             </span>
           )}
         </div>
-      </td>
+      </div>
       {allowDeletingInward && (
-        <td className="px-2 py-2 shrink-0 w-16">
+        <div className="px-2 py-2">
           <button
             onClick={onRemove}
             className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
           >
             <Trash2 className="size-4" />
           </button>
-        </td>
+        </div>
       )}
-    </tr>
+    </>
   );
 }
+
+const DeliveryRowCells = memo(DeliveryRowCellsImpl, (prev, next) => {
+  return (
+    prev.row === next.row &&
+    prev.autofillMapping === next.autofillMapping &&
+    prev.allowDeletingInward === next.allowDeletingInward &&
+    prev.allowUpdatingQuantity === next.allowUpdatingQuantity &&
+    prev.updateRow === next.updateRow &&
+    prev.removeRow === next.removeRow
+  );
+});
 
 // ─── Main Form ─────────────────────────────────────────────────────────────
 export default function AddSupplyDeliveryForm({
@@ -947,7 +1192,6 @@ export default function AddSupplyDeliveryForm({
   const [isMarkingAccepted, setIsMarkingAccepted] = useState(false);
   const [urlInwardRecordId, setUrlInwardRecordId] = useState<string>("");
 
-  // Extract inward_record_id from URL query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("inward_record_id");
@@ -955,14 +1199,32 @@ export default function AddSupplyDeliveryForm({
   }, []);
 
   const inwardRecordId = urlInwardRecordId || propInwardRecordId;
-  const recordDeliveryId = useRef<string | null>(null);
 
-  const updateRow = useCallback((index: number, updated: RowItem) => {
-    setRows((prev) => prev.map((r, i) => (i === index ? updated : r)));
+  const getRecordDeliveryIdFromUrl = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("record_delivery_id");
+  };
+
+  const addRecordDeliveryIdToUrl = (recordDeliveryId: string): void => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("record_delivery_id", recordDeliveryId);
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}?${params.toString()}`,
+    );
+  };
+
+  const recordDeliveryId = useRef<string | null>(getRecordDeliveryIdFromUrl());
+
+  const updateRow = useCallback((id: string, updated: RowItem) => {
+    setRows((prev) => prev.map((r) => (r.record_item_id === id ? updated : r)));
   }, []);
 
-  const removeRow = useCallback((index: number) => {
-    setRows((prev) => prev.filter((_, i) => i !== index));
+  const removeRow = useCallback((id: string) => {
+    setRows((prev) => prev.filter((r) => r.record_item_id !== id));
   }, []);
 
   // Step 1: Fetch institute mappings to get supplier warehouse name
@@ -979,7 +1241,28 @@ export default function AddSupplyDeliveryForm({
     enabled: !!facilityId,
   });
 
-  // Extract warehouse name from supplier mappings
+  const { data: supplyDeliveriesData } = useQuery({
+    queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+    queryFn: () =>
+      request<SupplyDeliveryListResponse>(
+        `/api/v1/supply_delivery/`,
+        HttpMethod.GET,
+        {
+          order: deliveryOrderId,
+          facility: facilityId,
+          ordering: "created_date",
+          limit: 1000,
+        },
+      ),
+    enabled: !!deliveryOrderId && !!facilityId,
+  });
+
+  const consumedMap = useMemo(
+    () => buildConsumedMap(supplyDeliveriesData?.results ?? []),
+    [supplyDeliveriesData],
+  );
+
+
   const supplierWarehouseName = useMemo(() => {
     if (!supplierId || !instituteMappings?.results?.[0]) return null;
 
@@ -991,49 +1274,176 @@ export default function AddSupplyDeliveryForm({
     return supplierMapping?.supplier_name ?? null;
   }, [supplierId, instituteMappings]);
 
-  // Step 2: Fetch inward record and prefill rows
-  const { data: inwardRecord, isLoading: isLoadingInward } = useQuery({
-    queryKey: ["inwardRecord", inwardRecordId],
-    queryFn: () =>
-      request<InwardRecord>(
-        `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
-        HttpMethod.GET,
-      ),
-    enabled: !!inwardRecordId,
-  });
+  const [allInwardItems, setAllInwardItems] = useState<InwardItem[]>([]);
+  const [inwardRecordMeta, setInwardRecordMeta] = useState<{
+    id: string;
+    facility_id: string;
+    inward_date: string;
+    sync_status: string;
+    items_initial_count: number;
+    items_current_count: number;
+    deliveries: Delivery[];
+  } | null>(null);
+  const [paginationInProgress, setPaginationInProgress] = useState(false);
+  const initializationRef = useRef(false);
+  const paginationCancelledRef = useRef(false);
 
-  // Step 3: Fetch default product mappings for autofill
-  const { data: defaultMappingsData } = useQuery({
-    queryKey: ["defaultProductMappings", inwardRecordId],
-    queryFn: () =>
-      request<DefaultProductMappingsResponse>(
-        `/api/care_eaushadhi/product-mappings/default-mapping/`,
-        HttpMethod.GET,
-        {
-          inward_record_id: inwardRecordId,
-        },
-      ),
-    enabled: !!inwardRecordId,
-  });
+  const fetchAllInwardRecordPages = useCallback(async () => {
+    if (!inwardRecordId) return;
+
+    try {
+      // Reset cancel flag
+      paginationCancelledRef.current = false;
+
+      let allItems: InwardItem[] = [];
+      let offset = 0;
+      let totalCount = 0;
+      let isFirstPage = true;
+
+      do {
+        // Check if cancelled
+        if (paginationCancelledRef.current) {
+          setPaginationInProgress(false);
+          return;
+        }
+
+        // Fetch current page
+        const pageResponse = await request<InwardRecord>(
+          `/api/care_eaushadhi/inward-records/${inwardRecordId}/`,
+          HttpMethod.GET,
+          {
+            limit: INWARD_RECORDS_PAGE_SIZE,
+            offset: offset,
+            warehouse_name: supplierWarehouseName || undefined,
+          },
+        );
+
+        if (!pageResponse) {
+          setPaginationInProgress(false);
+          return;
+        }
+
+        if (isFirstPage) {
+          setInwardRecordMeta({
+            id: pageResponse.id,
+            facility_id: pageResponse.facility_id,
+            inward_date: pageResponse.inward_date,
+            sync_status: "FETCHED",
+            items_initial_count: pageResponse.count,
+            items_current_count: pageResponse.count,
+            deliveries: [],
+          });
+          totalCount = pageResponse.count;
+          isFirstPage = false;
+        }
+
+        if (pageResponse.items && pageResponse.items.length > 0) {
+          allItems = [...allItems, ...pageResponse.items];
+        }
+
+        setAllInwardItems([...allItems]);
+
+        offset += INWARD_RECORDS_PAGE_SIZE;
+      } while (offset < totalCount);
+
+      setPaginationInProgress(false);
+    } catch (err) {
+      console.error("Error fetching inward record pages:", err);
+      setPaginationInProgress(false);
+    }
+  }, [inwardRecordId, supplierWarehouseName]);
+
+  const handleCancel = useCallback(() => {
+    paginationCancelledRef.current = true;
+    setPaginationInProgress(false);
+    setRows([]);
+    setAllInwardItems([]);
+    setInwardRecordMeta(null);
+    initializationRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (initializationRef.current) return;
+
+    if (
+      inwardRecordId &&
+      !paginationInProgress &&
+      allInwardItems.length === 0
+    ) {
+      initializationRef.current = true;
+      setPaginationInProgress(true);
+      fetchAllInwardRecordPages().finally(() => {});
+    }
+  }, [inwardRecordId, fetchAllInwardRecordPages]);
+
+  const inwardRecord = useMemo(() => {
+    if (!inwardRecordMeta) return null;
+    return {
+      ...inwardRecordMeta,
+      items: allInwardItems,
+    };
+  }, [inwardRecordMeta, allInwardItems]);
+
+  const { data: defaultMappingsData, isLoading: isLoadingDefaultMappings } =
+    useQuery({
+      queryKey: ["defaultProductMappings", inwardRecordId],
+      queryFn: () =>
+        request<DefaultProductMappingsResponse>(
+          `/api/care_eaushadhi/product-mappings/default-mapping/`,
+          HttpMethod.GET,
+          {
+            inward_record_id: inwardRecordId,
+          },
+        ),
+      enabled: !!inwardRecordId,
+    });
 
   // Create a map for quick lookup of autofill mappings by eaushadhi_drug_id
   const autofillMappingsMap = useMemo(() => {
     const map = new Map<string, ProductMapping>();
+    if (paginationInProgress) return map;
     if (defaultMappingsData?.results) {
       defaultMappingsData.results.forEach((mapping) => {
         map.set(mapping.eaushadhi_drug_id, mapping);
       });
     }
     return map;
-  }, [defaultMappingsData]);
+  }, [defaultMappingsData, paginationInProgress]);
+
+
+
+  const itemAvailabilityMap = useMemo(() => {
+    const map = new Map<string, ItemAvailability>();
+    allInwardItems.forEach((item) => {
+      map.set(item.id, getItemAvailability(item));
+    });
+    return map;
+  }, [allInwardItems]);
+
+  const supplyDeliveryIdToRecordItemDeliveryId = useMemo(() => {
+    const map = new Map<string, string>();
+    allInwardItems.forEach((item) => {
+      item.item_deliveries.forEach((delivery) => {
+        if (delivery.supply_delivery_id) {
+          map.set(delivery.supply_delivery_id, delivery.id);
+        }
+      });
+    });
+    return map;
+  }, [allInwardItems]);
 
   const deliveryInwardRecordIdMapping = useMemo<Delivery | undefined>(() => {
-    return inwardRecord?.deliveries.find(
-      (d) =>
-        d.inward_record_id === inwardRecordId &&
-        d.delivery_order_id === deliveryOrderId,
-    );
-  }, [inwardRecordId, deliveryOrderId, inwardRecord]);
+    if (!inwardRecordId) return undefined;
+    const match = allInwardItems
+      .flatMap((item) => item.item_deliveries)
+      .find((d) => d.delivery_order_id === deliveryOrderId);
+    if (!match?.record_delivery_id) return undefined;
+    return {
+      id: match.record_delivery_id,
+      inward_record_id: inwardRecordId,
+      delivery_order_id: deliveryOrderId,
+    };
+  }, [allInwardItems, deliveryOrderId, inwardRecordId]);
 
   useEffect(() => {
     if (deliveryInwardRecordIdMapping) {
@@ -1041,74 +1451,25 @@ export default function AddSupplyDeliveryForm({
     }
   }, [deliveryInwardRecordIdMapping]);
 
-  // Derive inwardDate from prop or inward record
   const inwardDate = propInwardDate || inwardRecord?.inward_date || "";
 
-  // Step 4: Filter and prefill rows based on warehouse name
   useEffect(() => {
     if (!inwardRecord?.items || inwardRecord.items.length === 0) return;
+    if (isLoadingDefaultMappings) return;
 
     try {
-      // Filter items by warehouse name
-      const filteredItems = inwardRecord.items.filter(
-        (item) => item.warehouse_name === supplierWarehouseName,
-      );
-
-      const newDiscrepancies: DiscrepancyItem[] = [];
+      const filteredItems = inwardRecord.items;
 
       const newRows = filteredItems
         .map((item) => {
           const expiryDate = item.expiry_date
             ? item.expiry_date.split("T")[0]
             : "";
-          const packSize = parseFloat(item.unit_pack) || 1;
-          const receivedQty = parseFloat(item.quantity_received_current) || 0;
+          const { packSize, availableUnits } = getItemAvailability(item);
+          const availableQty =
+            packSize > 0 ? availableUnits / packSize : availableUnits;
 
-          const totalConsumedQty = item.item_deliveries.reduce(
-            (consumedQty, delivery) => {
-              if (
-                delivery.status === "ACCEPTED" ||
-                delivery.status === "ACCEPTED_OVERRIDE"
-              ) {
-                return (
-                  consumedQty + parseInt(delivery.quantity_received) / packSize
-                );
-              }
-              return consumedQty;
-            },
-            0,
-          );
-
-          const availableQty = Math.max(receivedQty - totalConsumedQty, 0);
-
-          if (totalConsumedQty > receivedQty) {
-            const currentRecordDeliveryId = inwardRecord.deliveries.find(
-              (d) => d.delivery_order_id === deliveryOrderId,
-            )?.id;
-
-            if (currentRecordDeliveryId) {
-              const activeDeliveries = item.item_deliveries.filter(
-                (d) =>
-                  d.record_delivery_id === currentRecordDeliveryId &&
-                  d.status === "ACCEPTED",
-              );
-
-              if (activeDeliveries.length > 0) {
-                newDiscrepancies.push({
-                  drug_name: item.drug_name,
-                  available_qty: receivedQty,
-                  accepted_qty: totalConsumedQty,
-                  pack_size: packSize,
-                  supply_delivery_ids: activeDeliveries.map(
-                    (d) => d.supply_delivery_id as string,
-                  ),
-                  record_item_delivery_ids: activeDeliveries.map((d) => d.id),
-                });
-              }
-            }
-          }
-
-          return {
+          const row = {
             ...EMPTY_ROW(),
             record_item_id: item.id,
             product_knowledge_name: extractGenericName(item.drug_name),
@@ -1118,24 +1479,40 @@ export default function AddSupplyDeliveryForm({
             pack_qty: availableQty,
             quantity: String(availableQty),
             accepted_pack_qty: availableQty,
-            accepted_qty_in_units: String(packSize * availableQty),
-            quantity_in_units: String(packSize * availableQty),
+            accepted_qty_in_units: String(availableUnits),
+            quantity_in_units: String(availableUnits),
             eaushadhi_drug_name: item.drug_name,
             eaushadhi_drug_id: item.drug_id,
             is_new_batch: true,
             suggested_base_unit_code: inferBaseUnitCode(item.drug_name),
           } as RowItem;
+
+          const cachedMapping = autofillMappingsMap.get(item.drug_id);
+          if (cachedMapping) {
+            row.product_knowledge_id = cachedMapping.product_knowledge.id;
+            row.product_knowledge_slug = cachedMapping.product_knowledge.slug;
+            row.product_knowledge_name = cachedMapping.product_knowledge.name;
+            row.product_mapping_id = cachedMapping.id;
+          }
+
+          return row;
         })
         .filter((row): row is RowItem => row !== null && row.pack_qty > 0);
 
       setRows(newRows);
-      setDiscrepancies(newDiscrepancies);
       setPrefillError("");
     } catch (err) {
       console.error("Error prefilling data:", err);
       setPrefillError(t("supply_form_prefill_error"));
     }
-  }, [inwardRecord, supplierWarehouseName, deliveryOrderId, t]);
+  }, [
+    inwardRecord,
+    supplierWarehouseName,
+    deliveryOrderId,
+    t,
+    autofillMappingsMap,
+    isLoadingDefaultMappings,
+  ]);
 
   const { mutateAsync: runSuperBatch } = useSuperBatchRequest();
 
@@ -1159,61 +1536,247 @@ export default function AddSupplyDeliveryForm({
       },
     });
 
-  // Mutation for recording deliveries in eAushadhi system
-  const { mutateAsync: recordDeliveries } = useMutation({
-    mutationFn: async (payload: {
-      inward_record_id: string;
-      facility_id: string;
-      delivery_order_id: string;
-    }) =>
-      request<{ id: string }>(
+  const recordDeliveries = async (payload: {
+    inward_record_id: string;
+    facility_id: string;
+    delivery_order_id: string;
+  }) => {
+    const existingId = getRecordDeliveryIdFromUrl();
+    if (existingId) {
+      return { id: existingId };
+    }
+
+    try {
+      const response = await request<{ id: string }>(
         `/api/care_eaushadhi/record-deliveries/`,
         HttpMethod.POST,
         payload,
-      ),
-  });
+      );
+
+      addRecordDeliveryIdToUrl(response.id);
+
+      return response;
+    } catch (err: any) {
+      // Handle 409 - might already be cached in URL
+      const is409 =
+        err.status === 409 ||
+        err.statusCode === 409 ||
+        (err.message && err.message.includes("409"));
+      if (is409) {
+        // Try to get from URL params as fallback
+        const cachedId = getRecordDeliveryIdFromUrl();
+        if (cachedId) {
+          return { id: cachedId };
+        }
+        toast.error(
+          "This delivery order is already linked elsewhere. Please use a different delivery order.",
+        );
+      }
+      throw err;
+    }
+  };
+
+  async function saveRows(
+    rowsToSave: RowItem[],
+    statusOverrides?: Map<string, "ACCEPTED_OVERRIDE" | "SOURCE_REVERSED">,
+  ) {
+    if (
+      inwardRecordId &&
+      deliveryInwardRecordIdMapping === undefined &&
+      !recordDeliveryId.current
+    ) {
+      const response = await recordDeliveries({
+        inward_record_id: inwardRecordId,
+        facility_id: facilityId,
+        delivery_order_id: deliveryOrderId,
+      });
+      recordDeliveryId.current = response.id;
+    }
+
+    if (!recordDeliveryId.current) {
+      throw new Error(t("supply_form_missing_record_delivery_ref"));
+    }
+
+    const deliveryInputs: RowDeliveryInput[] = rowsToSave.map((row) => ({
+      productKnowledgeId: row.product_knowledge_id,
+      productKnowledgeSlug: row.product_knowledge_slug,
+      productKnowledgeName: row.product_knowledge_name,
+      chargeItemCategorySlug: row.charge_item_category_slug,
+      batchNumber: row.batch_number,
+      expiryDate: row.expiry_date,
+      packSize: row.pack_size,
+      packQty: row.accepted_pack_qty,
+      quantity: row.accepted_qty_in_units,
+      purchasePrice: "0",
+      recordItemId: row.record_item_id,
+      existingProductId: row.supplied_item_id || undefined,
+      isNewBatch: row.is_new_batch,
+      deliveryStatus: statusOverrides?.get(row.record_item_id) ?? "ACCEPTED",
+    }));
+
+    const chunks = chunkRows(deliveryInputs);
+
+    const ctx: RowDeliveryBatchContext = {
+      facilityId,
+      destination,
+      deliveryOrderId,
+      recordDeliveryId: recordDeliveryId.current,
+    };
+
+    for (const chunk of chunks) {
+      const payload = buildChainBatch(chunk, ctx);
+      const results = await runSuperBatch(payload);
+      const chainResults = extractChainResults(results);
+
+      for (const result of chainResults) {
+        if (result.errors.length > 0) {
+          throw new Error(
+            `Chain ${result.chainId} failed: ${result.errors.join("; ")}`,
+          );
+        }
+      }
+
+      const overridePatches: Promise<unknown>[] = [];
+      chunk.forEach((input, chainIdx) => {
+        const overrideStatus = input.deliveryStatus;
+        if (!overrideStatus || overrideStatus === "ACCEPTED") return;
+
+        const chainResult = chainResults.find((r) => r.chainId === chainIdx);
+        const inwardItemId = chainResult?.inwardItemId;
+        const supplyDeliveryId = chainResult?.supplyDeliveryId;
+
+        if (inwardItemId) {
+          overridePatches.push(
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${inwardItemId}/`,
+              HttpMethod.PATCH,
+              { status: overrideStatus },
+            ),
+          );
+        } else {
+          console.warn(
+            `saveRows: could not resolve inwardItemId for chain ${chainIdx} to apply status override "${overrideStatus}"`,
+          );
+        }
+
+        if (overrideStatus === "SOURCE_REVERSED") {
+          if (supplyDeliveryId) {
+            overridePatches.push(
+              request(
+                `/api/v1/supply_delivery/${supplyDeliveryId}/`,
+                HttpMethod.PATCH,
+                { status: "entered_in_error" },
+              ),
+            );
+          } else {
+            console.warn(
+              `saveRows: could not resolve supplyDeliveryId for chain ${chainIdx} to mark supply_delivery as entered_in_error`,
+            );
+          }
+        }
+      });
+
+      if (overridePatches.length > 0) {
+        await Promise.all(overridePatches);
+      }
+    }
+  }
+
+  function reportSaveError(err: unknown) {
+    if (err instanceof SuperBatchError) {
+      const errorDetails = extractErrorDetailsFromSuperBatch(err.results);
+
+      if (errorDetails.length > 0) {
+        const errorMessage = formatErrorMessage(errorDetails, t);
+        toast.error(errorMessage);
+      } else {
+        const firstFailed = err.failed?.[0];
+        toast.error(
+          `Failed: ${
+            (firstFailed?.data as any)?.detail ??
+            firstFailed?.status_code ??
+            t("supply_form_unexpected_error")
+          }`,
+        );
+      }
+
+      console.error("SuperBatchError details:", {
+        results: err.results,
+        failed: err.failed,
+        status: err.status,
+      });
+    } else if (err instanceof Error) {
+      toast.error(err.message);
+    } else {
+      console.error(err);
+      toast.error(t("supply_form_unexpected_error"));
+    }
+  }
 
   async function handleMarkDiscrepanciesAsError() {
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
+
     const allSupplyDeliveryIds = discrepancies.flatMap(
       (d) => d.supply_delivery_ids,
     );
     const allRecordItemDeliveryIds = discrepancies.flatMap(
       (d) => d.record_item_delivery_ids,
     );
+
     if (
       allSupplyDeliveryIds.length === 0 &&
-      allRecordItemDeliveryIds.length === 0
+      allRecordItemDeliveryIds.length === 0 &&
+      inputOnly.length === 0
     ) {
       setDiscrepancies([]);
       return;
     }
+
     setIsMarkingErrors(true);
     try {
-      await Promise.all([
-        ...allSupplyDeliveryIds.map((id) =>
-          request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
-            status: "entered_in_error",
-          }),
-        ),
-        ...allRecordItemDeliveryIds.map((id) =>
-          request(
-            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
-            HttpMethod.PATCH,
-            { status: "SOURCE_REVERSED" },
+      if (
+        allSupplyDeliveryIds.length > 0 ||
+        allRecordItemDeliveryIds.length > 0
+      ) {
+        await Promise.all([
+          ...allSupplyDeliveryIds.map((id) =>
+            request(`/api/v1/supply_delivery/${id}/`, HttpMethod.PATCH, {
+              status: "entered_in_error",
+            }),
           ),
-        ),
-      ]);
+          ...allRecordItemDeliveryIds.map((id) =>
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+              HttpMethod.PATCH,
+              { status: "SOURCE_REVERSED" },
+            ),
+          ),
+        ]);
+      }
+
+      if (inputOnly.length > 0) {
+        const overrideMap = new Map<string, "SOURCE_REVERSED">();
+        inputOnly.forEach((d) => {
+          d.record_item_ids?.forEach((id) =>
+            overrideMap.set(id, "SOURCE_REVERSED"),
+          );
+        });
+        await saveRows(rows, overrideMap);
+      }
+
       toast.success(t("supply_form_marked_as_error_success"));
       setDiscrepancies([]);
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["inwardRecord", inwardRecordId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["supplyDeliveries", deliveryOrderId],
-        }),
-      ]);
-    } catch {
+
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
+
+      if (inputOnly.length > 0) {
+        setRows([]);
+        onSuccess();
+      }
+    } catch (err) {
+      reportSaveError(err);
       toast.error(t("supply_form_marked_as_error_failure"));
     } finally {
       setIsMarkingErrors(false);
@@ -1221,41 +1784,61 @@ export default function AddSupplyDeliveryForm({
   }
 
   async function handleMarkDiscrepanciesAsAccepted() {
+    const inputOnly = discrepancies.filter((d) => !!d.record_item_ids?.length);
+
     const allSupplyDeliveryIds = discrepancies.flatMap(
       (d) => d.supply_delivery_ids,
     );
     const allRecordItemDeliveryIds = discrepancies.flatMap(
       (d) => d.record_item_delivery_ids,
     );
+
     if (
       allSupplyDeliveryIds.length === 0 &&
-      allRecordItemDeliveryIds.length === 0
+      allRecordItemDeliveryIds.length === 0 &&
+      inputOnly.length === 0
     ) {
       setDiscrepancies([]);
       return;
     }
+
     setIsMarkingAccepted(true);
     try {
-      await Promise.all([
-        ...allRecordItemDeliveryIds.map((id) =>
-          request(
-            `/api/care_eaushadhi/record-item-deliveries/${id}/`,
-            HttpMethod.PATCH,
-            { status: "ACCEPTED_OVERRIDE" },
+      if (allRecordItemDeliveryIds.length > 0) {
+        await Promise.all(
+          allRecordItemDeliveryIds.map((id) =>
+            request(
+              `/api/care_eaushadhi/record-item-deliveries/${id}/`,
+              HttpMethod.PATCH,
+              { status: "ACCEPTED_OVERRIDE" },
+            ),
           ),
-        ),
-      ]);
+        );
+      }
+
+      if (inputOnly.length > 0) {
+        const overrideMap = new Map<string, "ACCEPTED_OVERRIDE">();
+        inputOnly.forEach((d) => {
+          d.record_item_ids?.forEach((id) =>
+            overrideMap.set(id, "ACCEPTED_OVERRIDE"),
+          );
+        });
+        await saveRows(rows, overrideMap);
+      }
+
       toast.success(t("supply_form_marked_as_accepted_success"));
       setDiscrepancies([]);
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["inwardRecord", inwardRecordId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["supplyDeliveries", deliveryOrderId],
-        }),
-      ]);
-    } catch {
+
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
+
+      if (inputOnly.length > 0) {
+        setRows([]);
+        onSuccess();
+      }
+    } catch (err) {
+      reportSaveError(err);
       toast.error(t("supply_form_marked_as_accepted_failure"));
     } finally {
       setIsMarkingAccepted(false);
@@ -1289,117 +1872,42 @@ export default function AddSupplyDeliveryForm({
 
     if (!validate()) return;
 
+    const historicalDiscrepancies = computeDiscrepancies(
+      allInwardItems,
+      deliveryOrderId,
+    );
+    const inputDiscrepancies = computeInputQuantityDiscrepancies(
+      rows,
+      itemAvailabilityMap,
+      consumedMap,
+      supplyDeliveryIdToRecordItemDeliveryId,
+    );
+    const preSaveDiscrepancies = [
+      ...historicalDiscrepancies,
+      ...inputDiscrepancies,
+    ];
+    if (preSaveDiscrepancies.length > 0) {
+      setDiscrepancies(preSaveDiscrepancies);
+      toast.error(t("supply_form_discrepancy_title"));
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      // Step 0: Record deliveries in eAushadhi system and get recordDeliveryId
-      if (inwardRecordId && deliveryInwardRecordIdMapping === undefined && recordDeliveryId.current === null) {
-        const response = await recordDeliveries({
-          inward_record_id: inwardRecordId,
-          facility_id: facilityId,
-          delivery_order_id: deliveryOrderId,
-        });
-
-        recordDeliveryId.current = response.id;
-      }
-
-      if (recordDeliveryId.current === null) {
-        toast.error(t("supply_form_missing_record_delivery_ref"));
-        return;
-      }
-
-      // Step 1: Convert RowItem[] to RowDeliveryInput[]
-      const deliveryInputs: RowDeliveryInput[] = rows.map((row) => ({
-        productKnowledgeSlug: row.product_knowledge_slug,
-        productKnowledgeName: row.product_knowledge_name,
-        chargeItemCategorySlug: row.charge_item_category_slug,
-        batchNumber: row.batch_number,
-        expiryDate: row.expiry_date,
-        packSize: row.pack_size,
-        packQty: row.accepted_pack_qty,
-        quantity: row.accepted_qty_in_units,
-        purchasePrice: "0",
-        recordItemId: row.record_item_id,
-        existingProductId: row.supplied_item_id || undefined,
-        isNewBatch: row.is_new_batch,
-      }));
-
-      // Step 2: Split rows into chunks
-      const chunks = chunkRows(deliveryInputs);
-
-      // Step 3: Create shared context
-      const ctx: RowDeliveryBatchContext = {
-        facilityId,
-        destination,
-        deliveryOrderId,
-        recordDeliveryId: recordDeliveryId.current,
-        eaushadhiProductKnowledgeId: rows[0]?.product_knowledge_id || "",
-      };
-
-      // Step 4: Process each chunk
-      for (const chunk of chunks) {
-        const payload = buildChainBatch(chunk, ctx);
-        const results = await runSuperBatch(payload);
-        const chainResults = extractChainResults(results);
-
-        // Check for errors
-        for (const result of chainResults) {
-          if (result.errors.length > 0) {
-            throw new Error(
-              `Chain ${result.chainId} failed: ${result.errors.join("; ")}`,
-            );
-          }
-        }
-      }
+      await saveRows(rows);
+      await queryClient.invalidateQueries({
+        queryKey: ["supplyDeliveriesForOrder", deliveryOrderId, facilityId],
+      });
 
       toast.success(t("supply_form_save_success"));
       setRows([]);
       onSuccess();
     } catch (err) {
-      if (err instanceof SuperBatchError) {
-        // Extract detailed validation errors from nested response structure
-        const errorDetails = extractErrorDetailsFromSuperBatch(err.results);
-
-        if (errorDetails.length > 0) {
-          // Show detailed error message with field names
-          const errorMessage = formatErrorMessage(errorDetails, t);
-          toast.error(errorMessage);
-        } else {
-          // Fallback: show first failed result's status code
-          const firstFailed = err.failed?.[0];
-          toast.error(
-            `Failed: ${(firstFailed?.data as any)?.detail ??
-            firstFailed?.status_code ??
-            t("supply_form_unexpected_error")
-            }`,
-          );
-        }
-
-        console.error("SuperBatchError details:", {
-          results: err.results,
-          failed: err.failed,
-          status: err.status,
-        });
-      } else if (err instanceof Error) {
-        toast.error(err.message);
-      } else {
-        console.error(err);
-        toast.error(t("supply_form_unexpected_error"));
-      }
+      reportSaveError(err);
     } finally {
       setIsProcessing(false);
     }
-  }
-
-  if (inwardRecordId && isLoadingInward) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border border-gray-200 border-t-gray-900" />
-        <p className="text-sm font-medium text-gray-700">
-          {t("supply_form_loading_inward_record")}
-        </p>
-      </div>
-    );
   }
 
   if (prefillError) {
@@ -1441,13 +1949,17 @@ export default function AddSupplyDeliveryForm({
             try {
               await initiateInwardFetch(true);
               toast.success(t("supply_form_refresh_success"));
-              // Invalidate the inward record query to trigger a refetch
-              await queryClient.invalidateQueries({
-                queryKey: ["inwardRecord", inwardRecordId],
-              });
+
+              setAllInwardItems([]);
+              setInwardRecordMeta(null);
+              setPaginationInProgress(true);
+              initializationRef.current = false;
+
+              fetchAllInwardRecordPages().finally(() => {});
             } catch (error) {
               console.error("Failed to refresh inward data:", error);
               toast.error(t("supply_form_refresh_error"));
+              setPaginationInProgress(false);
             }
           }}
           disabled={isFetching || !inwardDate}
@@ -1465,75 +1977,195 @@ export default function AddSupplyDeliveryForm({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-gray-200 overflow-x-auto bg-white shadow-sm">
-        <table className="w-full text-sm border-collapse">
-          <thead className="bg-gray-100">
-            <tr className="divide-x divide-gray-200">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[280px] max-w-[400px]">
-                {t("supply_form_col_product")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                {t("supply_form_col_batch")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 min-w-[150px]">
-                {t("supply_form_col_expiry")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                {t("supply_form_col_pack_size")}
-              </th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-24">
-                {t("supply_form_col_pack_qty")}
-              </th>
-              {
-                meta?.allow_updating_quantity_after_received &&
-                (
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                    {t("supply_form_col_accepted_pack_qty")}
-                  </th>
-                )
-              }
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">
-                {t("supply_form_col_qty_in_units")}
-              </th>
-              {(meta?.allow_deleting_inward_after_fetch ?? false) && (
-                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-16">
-                  {t("supply_form_col_actions")}
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map((row, index) => (
-              <DeliveryRow
-                key={row.record_item_id}
-                facilityId={facilityId}
-                row={row}
-                onChange={(updated) => updateRow(index, updated)}
-                onRemove={() => removeRow(index)}
-                allowDeletingInward={
-                  meta?.allow_deleting_inward_after_fetch ?? false
-                }
-                allowUpdatingQuantity={
-                  meta?.allow_updating_quantity_after_received ?? false
-                }
-                autofillMapping={autofillMappingsMap.get(row.eaushadhi_drug_id || "")}
-              />
-            ))}
-          </tbody>
-        </table>
+    <VirtualizedDeliveryTable
+      rows={rows}
+      facilityId={facilityId}
+      updateRow={updateRow}
+      removeRow={removeRow}
+      allowDeletingInward={meta?.allow_deleting_inward_after_fetch ?? false}
+      allowUpdatingQuantity={
+        meta?.allow_updating_quantity_after_received ?? false
+      }
+      autofillMappingsMap={autofillMappingsMap}
+      isProcessing={isProcessing}
+      paginationInProgress={paginationInProgress}
+      onCancel={handleCancel}
+      onSave={handleSave}
+      t={t}
+      discrepancies={discrepancies}
+      setDiscrepancies={setDiscrepancies}
+      isMarkingErrors={isMarkingErrors}
+      isMarkingAccepted={isMarkingAccepted}
+      onMarkDiscrepanciesAsAccepted={handleMarkDiscrepanciesAsAccepted}
+      onMarkDiscrepanciesAsError={handleMarkDiscrepanciesAsError}
+    />
+  );
+}
+
+// ─── Virtualized Table (CSS-grid based — header and rows share one layout) ─
+function VirtualizedDeliveryTable({
+  rows,
+  facilityId,
+  updateRow,
+  removeRow,
+  allowDeletingInward,
+  allowUpdatingQuantity,
+  autofillMappingsMap,
+  isProcessing,
+  paginationInProgress,
+  onCancel,
+  onSave,
+  t,
+  discrepancies,
+  setDiscrepancies,
+  isMarkingErrors,
+  isMarkingAccepted,
+  onMarkDiscrepanciesAsAccepted,
+  onMarkDiscrepanciesAsError,
+}: {
+  rows: RowItem[];
+  facilityId: string;
+  updateRow: (id: string, updated: RowItem) => void;
+  removeRow: (id: string) => void;
+  allowDeletingInward: boolean;
+  allowUpdatingQuantity: boolean;
+  autofillMappingsMap: Map<string, ProductMapping>;
+  isProcessing: boolean;
+  paginationInProgress: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  t: (key: string, opts?: any) => string;
+  discrepancies: DiscrepancyItem[];
+  setDiscrepancies: (d: DiscrepancyItem[]) => void;
+  isMarkingErrors: boolean;
+  isMarkingAccepted: boolean;
+  onMarkDiscrepanciesAsAccepted: () => void;
+  onMarkDiscrepanciesAsError: () => void;
+}) {
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => 76,
+    overscan: 10,
+  });
+
+  const gridTemplateColumns = getGridTemplateColumns(
+    allowUpdatingQuantity,
+    allowDeletingInward,
+  );
+  const minTableWidth = getMinTableWidth(
+    allowUpdatingQuantity,
+    allowDeletingInward,
+  );
+
+  return (
+    <div className="space-y-4" style={{ scrollbarGutter: "stable" }}>
+      <div
+        ref={tableScrollRef}
+        className="rounded-md border border-gray-200 overflow-y-auto overflow-x-auto bg-white shadow-sm"
+        style={{ maxHeight: "70vh" }}
+      >
+        <div
+          className="sticky top-0 z-10 bg-gray-100 border-b border-gray-200"
+          style={{ minWidth: `${minTableWidth}px`, width: "100%" }}
+        >
+          <div className="grid" style={{ gridTemplateColumns }}>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_product")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_batch")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_expiry")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_pack_size")}
+            </div>
+            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              {t("supply_form_col_pack_qty")}
+            </div>
+            {allowUpdatingQuantity && (
+              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+                {t("supply_form_col_accepted_pack_qty")}
+              </div>
+            )}
+            <div
+              className={`px-3 py-2 text-left text-xs font-semibold text-gray-700 ${
+                allowDeletingInward ? "border-r border-gray-200" : ""
+              }`}
+            >
+              {t("supply_form_col_qty_in_units")}
+            </div>
+            {allowDeletingInward && (
+              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                {t("supply_form_col_actions")}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ minWidth: `${minTableWidth}px`, width: "100%" }}>
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <div
+                  key={row.record_item_id}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  className="grid items-start hover:bg-gray-50/40 border-b border-gray-100"
+                  style={{
+                    gridTemplateColumns,
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <DeliveryRowCells
+                    facilityId={facilityId}
+                    row={row}
+                    updateRow={updateRow}
+                    removeRow={removeRow}
+                    allowDeletingInward={allowDeletingInward}
+                    allowUpdatingQuantity={allowUpdatingQuantity}
+                    autofillMapping={autofillMappingsMap.get(
+                      row.eaushadhi_drug_id || "",
+                    )}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
+
       <div className="flex items-center justify-end">
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setRows([])}
-            disabled={isProcessing}
-          >
+          <Button variant="outline" onClick={onCancel} disabled={isProcessing}>
             {t("supply_form_cancel")}
           </Button>
-          <Button onClick={handleSave} disabled={isProcessing}>
-            {isProcessing ? t("supply_form_saving") : t("supply_form_save")}
+
+          <Button
+            onClick={onSave}
+            disabled={
+              isProcessing || paginationInProgress || discrepancies.length > 0
+            }
+          >
+            {isProcessing
+              ? t("supply_form_saving")
+              : paginationInProgress
+                ? t("supply_form_loading_items")
+                : t("supply_form_save")}
           </Button>
         </div>
       </div>
@@ -1589,7 +2221,7 @@ export default function AddSupplyDeliveryForm({
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              onClick={handleMarkDiscrepanciesAsAccepted}
+              onClick={onMarkDiscrepanciesAsAccepted}
               disabled={isMarkingErrors || isMarkingAccepted}
             >
               {isMarkingAccepted
@@ -1598,7 +2230,7 @@ export default function AddSupplyDeliveryForm({
             </Button>
             <Button
               variant="destructive"
-              onClick={handleMarkDiscrepanciesAsError}
+              onClick={onMarkDiscrepanciesAsError}
               disabled={isMarkingErrors || isMarkingAccepted}
             >
               {isMarkingErrors
