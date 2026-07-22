@@ -303,6 +303,7 @@ This plugin requires the following backend plugins to function properly:
   - `manual_addition` - Allow manual item addition
   - `allow_deleting_inward_after_fetch` - Enable deletion of fetched records
   - `allow_updating_quantity_after_received` - Allow quantity modifications post-receipt
+  - `allow_creating_product_knowledge` - Allow creating new product knowledge
 
 **User Roles**: Super Admin, Facility Admin
 
@@ -381,8 +382,10 @@ This plugin requires the following backend plugins to function properly:
   - Batch and expiry validation
   - At least one item required
 - **Permissions-Based UI**:
+  - Manual addition of items controlled by `manual_addition`
   - Delete button visibility controlled by `allow_deleting_inward_after_fetch`
   - Accepted quantity editing controlled by `allow_updating_quantity_after_received`
+  - Creation of new product knowledge controlled by `allow_creating_product_knowledge`
 - **Empty State Handling**:
   - All items added notification
   - No items from eAushadhi state
@@ -526,7 +529,16 @@ Super admins can add this plugin to their CARE instance using the following plug
 ```json
 {
   "url": "https://eaushadhi.care-ecosystem.workers.dev/assets/remoteEntry.js",
-  "name": "care_eaushadhi_fe"
+  "name": "care_eaushadhi_fe",
+  // optional configurations:
+  //  "config": {
+  //   "schema_version": true,
+  //   "credentials_ref": true,
+  //   "manual_addition": true,
+  //   "disable_inward_date": true,
+  //   "allow_deleting_inward_after_fetch": true,
+  //   "allow_updating_quantity_after_received": true
+
 }
 ```
 
