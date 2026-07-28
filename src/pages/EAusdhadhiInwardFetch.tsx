@@ -507,42 +507,38 @@ export default function EAusdhadhiInwardFetch({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {/* Mark as Entered in Error */}
-              {deliveryOrder.status !== "entered_in_error" && (
-                <DropdownMenuItem asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      updateStatus({
-                        status: "entered_in_error",
-                        note: "",
-                      })
-                    }
-                    disabled={isUpdating}
-                    className="w-full justify-start"
-                  >
-                    <span>{t("delivery_show_mark_entered_in_error")}</span>
-                  </Button>
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    updateStatus({
+                      status: "entered_in_error",
+                      note: "",
+                    })
+                  }
+                  disabled={isUpdating}
+                  className="w-full justify-start"
+                >
+                  <span>{t("delivery_show_mark_entered_in_error")}</span>
+                </Button>
+              </DropdownMenuItem>
 
               {/* Mark as Abandoned */}
-              {deliveryOrder.status !== "abandoned" && (
-                <DropdownMenuItem asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      updateStatus({
-                        status: "abandoned",
-                        note: "",
-                      })
-                    }
-                    disabled={isUpdating}
-                    className="w-full justify-start"
-                  >
-                    <span>{t("delivery_show_mark_abandoned")}</span>
-                  </Button>
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    updateStatus({
+                      status: "abandoned",
+                      note: "",
+                    })
+                  }
+                  disabled={isUpdating}
+                  className="w-full justify-start"
+                >
+                  <span>{t("delivery_show_mark_abandoned")}</span>
+                </Button>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
