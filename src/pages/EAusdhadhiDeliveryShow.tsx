@@ -26,10 +26,6 @@ interface Location {
   id: string;
   name: string;
 }
-interface Tag {
-  id: string;
-  display: string;
-}
 interface User {
   first_name: string;
   last_name: string;
@@ -57,7 +53,6 @@ interface DeliveryOrder {
   supplier?: Organization;
   origin?: Location;
   destination: Location;
-  tags: Tag[];
   created_date: string;
   created_by: User;
 }
@@ -265,7 +260,7 @@ export default function EAusdhadhiDeliveryShow({
       </div>
 
       {/* ── Delivery Info Card ── */}
-      <div className="border border-gray-200 rounded-lg bg-white p-4">
+      <div className="border border-gray-200 rounded-lg bg-white p-4 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
             <p className="text-sm font-medium text-gray-500">
@@ -317,30 +312,19 @@ export default function EAusdhadhiDeliveryShow({
           </div>
           <div>
             <p className="text-sm font-medium text-gray-500">
-              {t("delivery_show_tags")}
+              {t("delivery_show_inward_date")}
             </p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {deliveryOrder.tags?.length > 0 ? (
-                deliveryOrder.tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
-                  >
-                    {tag.display}
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-gray-400">
-                  {t("delivery_show_add_tags")}
-                </span>
-              )}
-            </div>
+            <p className="text-base font-semibold text-gray-900">
+              {inwardRecord?.inward_date
+                ? new Date(inwardRecord.inward_date).toLocaleDateString()
+                : "—"}
+            </p>
           </div>
         </div>
       </div>
 
       {/* ── Supply Deliveries Section ── */}
-      <div className="border border-gray-200 rounded-lg bg-white">
+      <div className="border border-gray-200 rounded-lg bg-white shadow-sm">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="text-base font-semibold text-gray-900">
             {isRequester
@@ -413,12 +397,14 @@ export default function EAusdhadhiDeliveryShow({
                           </td>
                           <td className="px-3 py-2">
                             <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm whitespace-nowrap ${
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm whitespace-nowrap border ${
                                 d.status === "completed"
-                                  ? "bg-green-100 text-green-700"
+                                  ? "bg-green-100 text-green-700 border-green-200"
                                   : d.status === "abandoned"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
+                                    ? "bg-red-100 text-red-700 border-red-200"
+                                    : d.status === "in_progress"
+                                      ? "bg-blue-100 text-blue-700 border-blue-200"
+                                      : "bg-yellow-100 text-yellow-700 border-yellow-200"
                               }`}
                             >
                               {t(`status_${d.status}`)}
