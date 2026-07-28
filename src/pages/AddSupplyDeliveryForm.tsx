@@ -545,6 +545,7 @@ function CreateProductKnowledgeDialog({
       setDosageForm(null);
       setDosageFormSearch("");
       setDosageFormSearchDebounced("");
+      setDosageFormOpen(false);
       setErrors({});
     }
   }, [open, eaushadhiDrugName]);
@@ -591,6 +592,8 @@ function CreateProductKnowledgeDialog({
     });
 
   const dosageForms = dosageFormsData?.results ?? [];
+  const isDosageFormResultsStale =
+    isDosageFormsFetching || dosageFormSearch !== dosageFormSearchDebounced;
 
   function handleNameChange(value: string) {
     setName(value);
@@ -819,17 +822,17 @@ function CreateProductKnowledgeDialog({
                     />
                   </div>
                   <div className="max-h-48 overflow-y-auto p-1">
-                    {isDosageFormsFetching && (
+                    {isDosageFormResultsStale && (
                       <div className="py-2 px-2 text-xs text-gray-500">
                         {t("create_pk_dosage_form_loading")}
                       </div>
                     )}
-                    {!isDosageFormsFetching && dosageForms.length === 0 && (
+                    {!isDosageFormResultsStale && dosageForms.length === 0 && (
                       <div className="py-2 px-2 text-xs text-gray-500">
                         {t("create_pk_no_dosage_forms")}
                       </div>
                     )}
-                    {dosageForms.map((form) => (
+                    {!isDosageFormResultsStale && dosageForms.map((form) => (
                       <button
                         type="button"
                         key={form.code}
