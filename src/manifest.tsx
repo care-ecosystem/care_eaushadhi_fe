@@ -1,21 +1,37 @@
 import { lazy, Suspense } from "react";
-import EAusdhadhiDeliveryCreate from "./pages/EAusdhadhiDeliveryCreate.tsx";
-import EAusdhadhiDeliveryShow from "./pages/EAusdhadhiDeliveryShow.tsx";
-import EAusdhadhiDeliveryEdit from "./pages/EAusdhadhiDeliveryEdit.tsx";
-import EAusdhadhiInwardFetch from "./pages/EAusdhadhiInwardFetch.tsx";
-import InstituteMappingAdmin from "./pages/InstituteMappingAdmin.tsx";
 import { InstituteMappingProvider } from "./contexts/InstituteMappingContext.tsx";
 import React from "react";
 import { TruckIcon } from "lucide-react";
 import en from "../public/locale/en.json";
+
+// Lazy load all page components for better code splitting and module federation
+const EAusdhadhiDeliveryCreate = lazy(
+  () => import("./pages/EAusdhadhiDeliveryCreate.tsx"),
+);
+const EAusdhadhiDeliveryShow = lazy(
+  () => import("./pages/EAusdhadhiDeliveryShow.tsx"),
+);
+const EAusdhadhiDeliveryEdit = lazy(
+  () => import("./pages/EAusdhadhiDeliveryEdit.tsx"),
+);
+const EAusdhadhiInwardFetch = lazy(
+  () => import("./pages/EAusdhadhiInwardFetch.tsx"),
+);
+const InstituteMappingAdmin = lazy(
+  () => import("./pages/InstituteMappingAdmin.tsx"),
+);
 
 // Wrapper component for pages
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center p-8">
-          eAushadhi Plugin Loading...
+        <div className="w-full px-6 py-6 max-w-5xl mx-auto">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/3" />
+            <div className="h-4 bg-gray-200 rounded w-1/2" />
+            <div className="h-4 bg-gray-200 rounded w-3/4" />
+          </div>
         </div>
       }
     >
