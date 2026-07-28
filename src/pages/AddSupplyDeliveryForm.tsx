@@ -7,7 +7,14 @@ import {
   CircleCheck,
   PlusIcon,
 } from "lucide-react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  useMutation,
+  keepPreviousData,
+} from "@tanstack/react-query";
+import { Popover } from "radix-ui";
+import { ChevronDownIcon, SearchIcon } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -45,6 +52,7 @@ import {
   formatDateForEaushadhiAPI,
   extractGenericName,
   extractDosageFormFilter,
+  cn,
 } from "@/lib/utils";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
 
@@ -514,6 +522,15 @@ function CreateProductKnowledgeDialog({
   const [slugValue, setSlugValue] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
   const [baseUnitCode, setBaseUnitCode] = useState("");
+  const [dosageForm, setDosageForm] = useState<{
+    code: string;
+    display: string;
+    system: string;
+  } | null>(null);
+  const [dosageFormSearch, setDosageFormSearch] = useState("");
+  const [dosageFormSearchDebounced, setDosageFormSearchDebounced] =
+    useState("");
+  const [dosageFormOpen, setDosageFormOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -525,9 +542,22 @@ function CreateProductKnowledgeDialog({
       setSlugValue(toSlug(displayName, 25));
       setCategorySlug("");
       setBaseUnitCode(suggestedBaseUnitCode ?? "");
+      setDosageForm(null);
+      setDosageFormSearch("");
+      setDosageFormSearchDebounced("");
+      setDosageFormOpen(false);
       setErrors({});
     }
   }, [open, eaushadhiDrugName]);
+
+  // Debounce dosage form search input like ValueSetSelect does in care_fe
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDosageFormSearchDebounced(dosageFormSearch),
+      500,
+    );
+    return () => clearTimeout(timer);
+  }, [dosageFormSearch]);
 
   const { data: categoriesData } = useQuery({
     queryKey: ["resourceCategories", facilityId, "product_knowledge"],
@@ -541,6 +571,29 @@ function CreateProductKnowledgeDialog({
   });
 
   const categories = categoriesData?.results ?? [];
+
+  const { data: dosageFormsData, isFetching: isDosageFormsFetching } =
+    useQuery({
+      queryKey: [
+        "valueSetExpand",
+        "system-medication-form-codes",
+        dosageFormSearchDebounced,
+      ],
+      queryFn: () =>
+        request<{
+          results: Array<{ code: string; display: string; system: string }>;
+        }>(
+          `/api/v1/valueset/system-medication-form-codes/expand/`,
+          HttpMethod.POST,
+          { search: dosageFormSearchDebounced, count: 10 },
+        ),
+      enabled: open && dosageFormOpen,
+      placeholderData: keepPreviousData,
+    });
+
+  const dosageForms = dosageFormsData?.results ?? [];
+  const isDosageFormResultsStale =
+    isDosageFormsFetching || dosageFormSearch !== dosageFormSearchDebounced;
 
   function handleNameChange(value: string) {
     setName(value);
@@ -558,6 +611,8 @@ function CreateProductKnowledgeDialog({
       next.categorySlug = t("create_pk_error_category_required");
     if (!baseUnitCode)
       next.baseUnitCode = t("create_pk_error_base_unit_required");
+    if (!dosageForm)
+      next.dosageForm = t("create_pk_error_dosage_form_required");
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -580,6 +635,14 @@ function CreateProductKnowledgeDialog({
           facility: facilityId,
           names: [],
           storage_guidelines: [],
+          definitional: {
+            dosage_form: {
+              code: dosageForm!.code,
+              display: dosageForm!.display,
+              system: dosageForm!.system,
+            },
+            intended_routes: [],
+          },
         },
       );
 
@@ -707,6 +770,93 @@ function CreateProductKnowledgeDialog({
             </Select>
             {errors.baseUnitCode && (
               <p className="text-xs text-red-500">{errors.baseUnitCode}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="pk-dosage-form">
+              {t("create_pk_field_dosage_form")}{" "}
+              <span className="text-red-500">*</span>
+            </Label>
+            <Popover.Root
+              open={dosageFormOpen}
+              onOpenChange={(o) => {
+                setDosageFormOpen(o);
+                if (!o) setDosageFormSearch("");
+              }}
+            >
+              <Popover.Trigger asChild>
+                <button
+                  type="button"
+                  id="pk-dosage-form"
+                  role="combobox"
+                  aria-expanded={dosageFormOpen}
+                  className="border-gray-300 focus-visible:border-gray-950 focus-visible:ring-gray-950/50 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-white px-3 py-2 text-sm whitespace-nowrap shadow-xs outline-none focus-visible:ring-[3px]"
+                >
+                  <span
+                    className={cn(
+                      "line-clamp-1",
+                      !dosageForm && "text-gray-500",
+                    )}
+                  >
+                    {dosageForm
+                      ? `${dosageForm.display} (${dosageForm.code})`
+                      : t("create_pk_select_dosage_form")}
+                  </span>
+                  <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
+                </button>
+              </Popover.Trigger>
+              <Popover.Content
+                align="start"
+                sideOffset={4}
+                className="z-50 w-(--radix-popover-trigger-width) rounded-md border border-gray-200 bg-white text-gray-950 shadow-md"
+              >
+                  <div className="relative border-b border-gray-200 p-1">
+                    <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500" />
+                    <Input
+                      autoFocus
+                      className="h-8 border-0 pl-8 text-sm shadow-none focus:border-0 focus:ring-0"
+                      placeholder={t("create_pk_select_dosage_form")}
+                      value={dosageFormSearch}
+                      onChange={(e) => setDosageFormSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto p-1">
+                    {isDosageFormResultsStale && (
+                      <div className="py-2 px-2 text-xs text-gray-500">
+                        {t("create_pk_dosage_form_loading")}
+                      </div>
+                    )}
+                    {!isDosageFormResultsStale && dosageForms.length === 0 && (
+                      <div className="py-2 px-2 text-xs text-gray-500">
+                        {t("create_pk_no_dosage_forms")}
+                      </div>
+                    )}
+                    {!isDosageFormResultsStale && dosageForms.map((form) => (
+                      <button
+                        type="button"
+                        key={form.code}
+                        className="focus:bg-gray-100 hover:bg-gray-100 block w-full cursor-default rounded-sm px-2 py-1.5 text-left text-sm outline-hidden"
+                        onClick={() => {
+                          setDosageForm({
+                            code: form.code,
+                            display: form.display,
+                            system: form.system,
+                          });
+                          setDosageFormOpen(false);
+                          setDosageFormSearch("");
+                          if (errors.dosageForm)
+                            setErrors((err) => ({ ...err, dosageForm: "" }));
+                        }}
+                      >
+                        {form.display} ({form.code})
+                      </button>
+                    ))}
+                  </div>
+                </Popover.Content>
+            </Popover.Root>
+            {errors.dosageForm && (
+              <p className="text-xs text-red-500">{errors.dosageForm}</p>
             )}
           </div>
         </div>
@@ -2068,39 +2218,39 @@ function VirtualizedDeliveryTable({
         style={{ maxHeight: "70vh" }}
       >
         <div
-          className="sticky top-0 z-10 bg-gray-100 border-b border-gray-200"
+          className="sticky top-0 z-1 bg-gray-50 border-b border-gray-200 text-sm"
           style={{ minWidth: `${minTableWidth}px`, width: "100%" }}
         >
           <div className="grid" style={{ gridTemplateColumns }}>
-            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+            <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_product")}
             </div>
-            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+            <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_batch")}
             </div>
-            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+            <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_expiry")}
             </div>
-            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+            <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_pack_size")}
             </div>
-            <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+            <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
               {t("supply_form_col_pack_qty")}
             </div>
             {allowUpdatingQuantity && (
-              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-200">
+              <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700 border-r border-gray-200">
                 {t("supply_form_col_accepted_pack_qty")}
               </div>
             )}
             <div
-              className={`px-3 py-2 text-left text-xs font-semibold text-gray-700 ${
+              className={`px-3 py-2 text-left text-sm font-semibold text-gray-700 ${
                 allowDeletingInward ? "border-r border-gray-200" : ""
               }`}
             >
               {t("supply_form_col_qty_in_units")}
             </div>
             {allowDeletingInward && (
-              <div className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+              <div className="px-3 py-2 text-left text-sm font-semibold text-gray-700">
                 {t("supply_form_col_actions")}
               </div>
             )}
@@ -2188,15 +2338,15 @@ function VirtualizedDeliveryTable({
           </p>
           <div className="overflow-x-auto rounded-md border border-gray-200">
             <table className="w-full text-sm border-collapse">
-              <thead className="bg-gray-100">
+              <thead className="bg-gray-50">
                 <tr className="divide-x divide-gray-200">
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                  <th className="px-3 py-2 text-left font-semibold text-gray-700">
                     {t("supply_form_col_product")}
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-36">
+                  <th className="px-3 py-2 text-left font-semibold text-gray-700 w-36">
                     {t("supply_form_discrepancy_available_qty")}
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-36">
+                  <th className="px-3 py-2 text-left font-semibold text-gray-700 w-36">
                     {t("supply_form_discrepancy_accepted_qty")}
                   </th>
                 </tr>
