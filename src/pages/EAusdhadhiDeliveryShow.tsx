@@ -275,7 +275,9 @@ export default function EAusdhadhiDeliveryShow({
             </Button>
           )}
           {/* Actions Dropdown Menu */}
-          {deliveryOrder.status !== "completed" && (
+          {deliveryOrder.status !== "completed" &&
+            deliveryOrder.status !== "entered_in_error" &&
+            deliveryOrder.status !== "abandoned" && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
