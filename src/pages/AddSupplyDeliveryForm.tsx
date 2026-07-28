@@ -654,9 +654,9 @@ function CreateProductKnowledgeDialog({
         product_knowledge: pk,
       });
       onOpenChange(false);
-    } catch (err) {
-      console.error("Error creating product knowledge:", err);
-      toast.error(t("create_pk_error"));
+    } catch (err: any) {
+      const errorMsg = err?.message || t("create_pk_error");
+      toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -811,49 +811,49 @@ function CreateProductKnowledgeDialog({
                 sideOffset={4}
                 className="z-50 w-(--radix-popover-trigger-width) rounded-md border border-gray-200 bg-white text-gray-950 shadow-md"
               >
-                  <div className="relative border-b border-gray-200 p-1">
-                    <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500" />
-                    <Input
-                      autoFocus
-                      className="h-8 border-0 pl-8 text-sm shadow-none focus:border-0 focus:ring-0"
-                      placeholder={t("create_pk_select_dosage_form")}
-                      value={dosageFormSearch}
-                      onChange={(e) => setDosageFormSearch(e.target.value)}
-                    />
-                  </div>
-                  <div className="max-h-48 overflow-y-auto p-1">
-                    {isDosageFormResultsStale && (
-                      <div className="py-2 px-2 text-xs text-gray-500">
-                        {t("create_pk_dosage_form_loading")}
-                      </div>
-                    )}
-                    {!isDosageFormResultsStale && dosageForms.length === 0 && (
-                      <div className="py-2 px-2 text-xs text-gray-500">
-                        {t("create_pk_no_dosage_forms")}
-                      </div>
-                    )}
-                    {!isDosageFormResultsStale && dosageForms.map((form) => (
-                      <button
-                        type="button"
-                        key={form.code}
-                        className="focus:bg-gray-100 hover:bg-gray-100 block w-full cursor-default rounded-sm px-2 py-1.5 text-left text-sm outline-hidden"
-                        onClick={() => {
-                          setDosageForm({
-                            code: form.code,
-                            display: form.display,
-                            system: form.system,
-                          });
-                          setDosageFormOpen(false);
-                          setDosageFormSearch("");
-                          if (errors.dosageForm)
-                            setErrors((err) => ({ ...err, dosageForm: "" }));
-                        }}
-                      >
-                        {form.display} ({form.code})
-                      </button>
-                    ))}
-                  </div>
-                </Popover.Content>
+                <div className="relative border-b border-gray-200 p-1">
+                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500" />
+                  <Input
+                    autoFocus
+                    className="h-8 border-0 pl-8 text-sm shadow-none focus:border-0 focus:ring-0"
+                    placeholder={t("create_pk_select_dosage_form")}
+                    value={dosageFormSearch}
+                    onChange={(e) => setDosageFormSearch(e.target.value)}
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto p-1">
+                  {isDosageFormResultsStale && (
+                    <div className="py-2 px-2 text-xs text-gray-500">
+                      {t("create_pk_dosage_form_loading")}
+                    </div>
+                  )}
+                  {!isDosageFormResultsStale && dosageForms.length === 0 && (
+                    <div className="py-2 px-2 text-xs text-gray-500">
+                      {t("create_pk_no_dosage_forms")}
+                    </div>
+                  )}
+                  {!isDosageFormResultsStale && dosageForms.map((form) => (
+                    <button
+                      type="button"
+                      key={form.code}
+                      className="focus:bg-gray-100 hover:bg-gray-100 block w-full cursor-default rounded-sm px-2 py-1.5 text-left text-sm outline-hidden"
+                      onClick={() => {
+                        setDosageForm({
+                          code: form.code,
+                          display: form.display,
+                          system: form.system,
+                        });
+                        setDosageFormOpen(false);
+                        setDosageFormSearch("");
+                        if (errors.dosageForm)
+                          setErrors((err) => ({ ...err, dosageForm: "" }));
+                      }}
+                    >
+                      {form.display} ({form.code})
+                    </button>
+                  ))}
+                </div>
+              </Popover.Content>
             </Popover.Root>
             {errors.dosageForm && (
               <p className="text-xs text-red-500">{errors.dosageForm}</p>
@@ -1651,9 +1651,11 @@ export default function AddSupplyDeliveryForm({
 
       setRows(newRows);
       setPrefillError("");
-    } catch (err) {
-      console.error("Error prefilling data:", err);
-      setPrefillError(t("supply_form_prefill_error"));
+    } catch (err: any) {
+
+      const errorMsg = err?.message || t("supply_form_prefill_error");
+
+      setPrefillError(errorMsg);
     }
   }, [
     inwardRecord,
@@ -1842,10 +1844,9 @@ export default function AddSupplyDeliveryForm({
       } else {
         const firstFailed = err.failed?.[0];
         toast.error(
-          `Failed: ${
-            (firstFailed?.data as any)?.detail ??
-            firstFailed?.status_code ??
-            t("supply_form_unexpected_error")
+          `Failed: ${(firstFailed?.data as any)?.detail ??
+          firstFailed?.status_code ??
+          t("supply_form_unexpected_error")
           }`,
         );
       }
@@ -2105,13 +2106,15 @@ export default function AddSupplyDeliveryForm({
               setPaginationInProgress(true);
               initializationRef.current = false;
 
-              fetchAllInwardRecordPages().finally(() => {});
-            } catch (error) {
-              console.error("Failed to refresh inward data:", error);
-              toast.error(t("supply_form_refresh_error"));
-              setPaginationInProgress(false);
+              fetchAllInwardRecordPages().finally(() => { });
+            } catch (err: any) {
+              const errorMsg = err?.message || t("supply_form_refresh_error");
+              toast.error(errorMsg);
             }
-          }}
+
+            setPaginationInProgress(false);
+          }
+          }
           disabled={isFetching || !inwardDate}
           className="flex items-center gap-2"
         >
@@ -2122,7 +2125,7 @@ export default function AddSupplyDeliveryForm({
               ? t("supply_form_check_new_items")
               : t("supply_form_retry_sync")}
         </Button>
-      </div>
+      </div >
     );
   }
 
@@ -2243,9 +2246,8 @@ function VirtualizedDeliveryTable({
               </div>
             )}
             <div
-              className={`px-3 py-2 text-left text-sm font-semibold text-gray-700 ${
-                allowDeletingInward ? "border-r border-gray-200" : ""
-              }`}
+              className={`px-3 py-2 text-left text-sm font-semibold text-gray-700 ${allowDeletingInward ? "border-r border-gray-200" : ""
+                }`}
             >
               {t("supply_form_col_qty_in_units")}
             </div>

@@ -1,4 +1,4 @@
-import { ChevronLeft, Loader2Icon, RefreshCw, PencilLine } from "lucide-react";
+import { ChevronLeft, Loader2Icon, RefreshCw, PencilLine, EllipsisVertical } from "lucide-react";
 import { navigate } from "raviger";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { request } from "@/apis/query";
@@ -9,6 +9,12 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { I18NNAMESPACE, POLL_STEP_MS, POLLING_TIMEOUT } from "@/lib/contants";
 import { useInstituteMapping } from "@/contexts/InstituteMappingContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Props {
   facilityId: string;
@@ -231,6 +237,33 @@ export default function EAusdhadhiInwardFetch({
       pollCountRef.current = 0;
       setIsRetrying(true);
       queryClient.invalidateQueries({ queryKey: inwardQueryKey });
+    },
+  });
+
+  // ── Update delivery order status ────────────────────────────────────────
+  const { mutate: updateStatus, isPending: isUpdating } = useMutation({
+    mutationFn: (data: { status: string; note?: string }) =>
+      request(
+        `/api/v1/facility/${facilityId}/order/delivery/${deliveryOrderId}/`,
+        HttpMethod.PUT,
+        {
+          ...deliveryOrder,
+          status: data.status,
+          note: data.note || deliveryOrder?.note,
+          supplier: deliveryOrder?.supplier?.id,
+          origin: deliveryOrder?.origin?.id,
+          destination: deliveryOrder?.destination.id,
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["deliveryOrder", deliveryOrderId],
+      });
+      toast.success(t("delivery_show_status_updated"));
+    },
+    onError: (error: any) => {
+      const errorMsg = error?.message || t("delivery_show_status_error");
+      toast.error(errorMsg);
     },
   });
 
@@ -457,6 +490,58 @@ export default function EAusdhadhiInwardFetch({
             </p>
           </div>
         </div>
+
+        {/* Actions Dropdown Menu */}
+        {deliveryOrder.status !== "completed" &&
+          deliveryOrder.status !== "entered_in_error" &&
+          deliveryOrder.status !== "abandoned" && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t("actions")}
+              >
+                <EllipsisVertical className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* Mark as Entered in Error */}
+              <DropdownMenuItem asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    updateStatus({
+                      status: "entered_in_error",
+                      note: "",
+                    })
+                  }
+                  disabled={isUpdating}
+                  className="w-full justify-start"
+                >
+                  <span>{t("delivery_show_mark_entered_in_error")}</span>
+                </Button>
+              </DropdownMenuItem>
+
+              {/* Mark as Abandoned */}
+              <DropdownMenuItem asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    updateStatus({
+                      status: "abandoned",
+                      note: "",
+                    })
+                  }
+                  disabled={isUpdating}
+                  className="w-full justify-start"
+                >
+                  <span>{t("delivery_show_mark_abandoned")}</span>
+                </Button>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="border border-gray-200 rounded-lg bg-white p-4 shadow-sm">
