@@ -247,6 +247,11 @@
   "create_pk_error_slug_invalid": "Slug must be 5–25 characters and contain only lowercase letters, numbers, hyphens, or underscores",
   "create_pk_error_category_required": "Category is required",
   "create_pk_error_base_unit_required": "Base unit is required",
+  "create_pk_field_dosage_form": "Dosage Form",
+  "create_pk_select_dosage_form": "Select Dosage Form",
+  "create_pk_error_dosage_form_required": "Dosage form is required",
+  "create_pk_dosage_form_loading": "Searching...",
+  "create_pk_no_dosage_forms": "No dosage forms found",
   "supply_form_product_group_imported": "Imported",
   "supply_form_product_group_suggestions": "Suggestions",
   "times": "times"
