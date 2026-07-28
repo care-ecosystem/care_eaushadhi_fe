@@ -528,7 +528,7 @@ Super admins can add this plugin to their CARE instance using the following plug
 
 ```json
 {
-  "url": "https://eaushadhi.care-ecosystem.workers.dev/assets/remoteEntry.js",
+  "url": "https://care-eaushadhi-fe.pages.dev/assets/remoteEntry.js",
   "name": "care_eaushadhi_fe",
   // optional configurations:
   //  "config": {
