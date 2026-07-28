@@ -23,10 +23,6 @@ interface Location {
   id: string;
   name: string;
 }
-interface Tag {
-  id: string;
-  display: string;
-}
 interface User {
   first_name: string;
   last_name: string;
@@ -39,7 +35,6 @@ interface DeliveryOrder {
   supplier?: Organization;
   origin?: Location;
   destination: Location;
-  tags: Tag[];
   created_date: string;
   created_by: User;
 }
@@ -464,7 +459,7 @@ export default function EAusdhadhiInwardFetch({
         </div>
       </div>
 
-      <div className="border border-gray-200 rounded-lg bg-white p-4">
+      <div className="border border-gray-200 rounded-lg bg-white p-4 shadow-sm">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
             <p className="text-sm font-medium text-gray-500">
@@ -516,29 +511,18 @@ export default function EAusdhadhiInwardFetch({
           </div>
           <div>
             <p className="text-sm font-medium text-gray-500">
-              {t("delivery_fetch_tags")}
+              {t("delivery_fetch_inward_date")}
             </p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {deliveryOrder.tags?.length > 0 ? (
-                deliveryOrder.tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
-                  >
-                    {tag.display}
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-gray-400">
-                  {t("delivery_fetch_add_tags")}
-                </span>
-              )}
-            </div>
+            <p className="text-base font-semibold text-gray-900">
+              {inward_date
+                ? new Date(inward_date).toLocaleDateString()
+                : "—"}
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="border border-gray-200 rounded-lg bg-white py-10">
+      <div className="border border-gray-200 rounded-lg bg-white py-10 shadow-sm">
         {renderInwardSection()}
       </div>
     </div>
