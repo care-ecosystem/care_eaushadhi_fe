@@ -11,6 +11,49 @@ import {
 
 const CARE_ACCESS_TOKEN_LOCAL_STORAGE_KEY = "care_access_token";
 
+
+export function extractErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const obj = data as Record<string, unknown>;
+
+  if (typeof obj.detail === "string") {
+    return obj.detail;
+  }
+
+  if (Array.isArray(obj.errors) && obj.errors.length > 0) {
+    const firstError = obj.errors[0] as Record<string, unknown>;
+
+    if (
+      firstError.ctx &&
+      typeof firstError.ctx === "object" &&
+      typeof (firstError.ctx as Record<string, unknown>).error === "string"
+    ) {
+      const errMsg = (firstError.ctx as Record<string, unknown>).error as string;
+      return errMsg;
+    }
+
+    if (typeof firstError.msg === "string") {
+      return firstError.msg;
+    }
+
+    if (firstError.msg && typeof firstError.msg === "object") {
+      const value = Object.values(firstError.msg)[0];
+      if (typeof value === "string") {
+        return value;
+      }
+    }
+
+    if (typeof firstError.error === "string") {
+      return firstError.error;
+    }
+  }
+
+  return null;
+}
+
 export const request = async <T>(
   endpoint: string,
   method: HttpMethod = HttpMethod.GET,
@@ -66,10 +109,23 @@ export const request = async <T>(
     if (json && response.ok) {
       return json;
     } else {
-      throw json;
+      const errorMessage = extractErrorMessage(json);
+      throw {
+        data: json,
+        status: response.status,
+        message: errorMessage || "An error occurred",
+      };
     }
-  } catch (error) {
-    throw { error, status: response.status };
+  } catch (error: any) {
+    if (error?.message && error?.data) {
+      throw error;
+    }
+    const errorMessage = extractErrorMessage(error);
+    throw {
+      error,
+      status: response.status,
+      message: errorMessage || "An error occurred",
+    };
   }
 };
 
@@ -81,6 +137,7 @@ export class SuperBatchError extends Error {
   results: SuperBatchResult[];
   failed: SuperBatchResult[];
   status?: number;
+  errorMessages: string[];
 
   constructor(
     message: string,
@@ -95,6 +152,10 @@ export class SuperBatchError extends Error {
     this.results = info.results;
     this.failed = info.failed;
     this.status = info.status;
+
+    this.errorMessages = this.failed
+      .map((result) => extractErrorMessage(result.data))
+      .filter((msg): msg is string => msg !== null);
   }
 }
 

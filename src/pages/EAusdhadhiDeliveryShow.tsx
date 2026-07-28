@@ -10,6 +10,13 @@ import AddSupplyDeliveryForm from "@/pages/AddSupplyDeliveryForm";
 import { navigateToDeliveryPrint } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { I18NNAMESPACE } from "@/lib/contants";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EllipsisVertical } from "lucide-react";
 
 interface Props {
   facilityId: string;
@@ -97,6 +104,8 @@ export default function EAusdhadhiDeliveryShow({
     return undefined;
   }, []);
 
+
+
   const goBackToDeliveryPage = useCallback(() => {
     navigate(
       `/facility/${facilityId}/locations/${locationId}/inventory/external/deliveries/incoming`,
@@ -145,13 +154,14 @@ export default function EAusdhadhiDeliveryShow({
 
   // Update delivery order status
   const { mutate: updateStatus, isPending: isUpdating } = useMutation({
-    mutationFn: (status: string) =>
+    mutationFn: (data: { status: string; note?: string }) =>
       request(
         `/api/v1/facility/${facilityId}/order/delivery/${deliveryOrderId}/`,
         HttpMethod.PUT,
         {
           ...deliveryOrder,
-          status,
+          status: data.status,
+          note: data.note || deliveryOrder?.note,
           supplier: deliveryOrder?.supplier?.id,
           origin: deliveryOrder?.origin?.id,
           destination: deliveryOrder?.destination.id,
@@ -169,7 +179,10 @@ export default function EAusdhadhiDeliveryShow({
         navigate(redirectPath);
       }
     },
-    onError: () => toast.error(t("delivery_show_status_error")),
+    onError: (error: any) => {
+      const errorMsg = error?.message || t("delivery_show_status_error");
+      toast.error(errorMsg);
+    },
   });
 
   if (isLoading) {
@@ -252,7 +265,12 @@ export default function EAusdhadhiDeliveryShow({
           {/* Mark as Approved — draft only */}
           {deliveryOrder.status === "draft" && (
             <Button
-              onClick={() => updateStatus("pending")}
+              onClick={() =>
+                updateStatus({
+                  status: "pending",
+                  note: deliveryOrder.note,
+                })
+              }
               disabled={isUpdating || supplyDeliveries.length === 0}
               className="!bg-green-700 hover:!bg-green-800 !text-white !opacity-100"
             >
@@ -260,6 +278,59 @@ export default function EAusdhadhiDeliveryShow({
                 ? t("delivery_show_updating")
                 : t("delivery_show_mark_approved")}
             </Button>
+          )}
+          {/* Actions Dropdown Menu */}
+          {deliveryOrder.status !== "completed" && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t("actions")}
+                >
+                  <EllipsisVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* Mark as Entered in Error */}
+                {deliveryOrder.status !== "entered_in_error" && (
+                  <DropdownMenuItem asChild>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        updateStatus({
+                          status: "entered_in_error",
+                          note: "",
+                        })
+                      }
+                      disabled={isUpdating}
+                      className="w-full justify-start"
+                    >
+                      <span>{t("delivery_show_mark_entered_in_error")}</span>
+                    </Button>
+                  </DropdownMenuItem>
+                )}
+
+                {/* Mark as Abandoned */}
+                {deliveryOrder.status !== "abandoned" && (
+                  <DropdownMenuItem asChild>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        updateStatus({
+                          status: "abandoned",
+                          note: "",
+                        })
+                      }
+                      disabled={isUpdating}
+                      className="w-full justify-start"
+                    >
+                      <span>{t("delivery_show_mark_abandoned")}</span>
+                    </Button>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -399,8 +470,8 @@ export default function EAusdhadhiDeliveryShow({
                           <td className="px-3 py-2 text-gray-600">
                             {d.supplied_item?.expiration_date
                               ? new Date(
-                                  d.supplied_item.expiration_date,
-                                ).toLocaleDateString()
+                                d.supplied_item.expiration_date,
+                              ).toLocaleDateString()
                               : "—"}
                           </td>
                           <td className="px-3 py-2 text-gray-600">
@@ -413,13 +484,12 @@ export default function EAusdhadhiDeliveryShow({
                           </td>
                           <td className="px-3 py-2">
                             <span
-                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm whitespace-nowrap ${
-                                d.status === "completed"
-                                  ? "bg-green-100 text-green-700"
-                                  : d.status === "abandoned"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                              }`}
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-sm whitespace-nowrap ${d.status === "completed"
+                                ? "bg-green-100 text-green-700"
+                                : d.status === "abandoned"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                                }`}
                             >
                               {t(`status_${d.status}`)}
                             </span>
