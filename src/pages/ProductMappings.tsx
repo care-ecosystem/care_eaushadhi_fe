@@ -1,14 +1,25 @@
-import { FC, useState, useEffect } from "react";
+import { FC, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   FolderOpenIcon,
-  PencilIcon,
-  Trash2Icon,
 } from "lucide-react";
 
 import { I18NNAMESPACE } from "@/lib/contants";
+import { request } from "@/apis/query";
+import { HttpMethod } from "@/apis/types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogClose,
@@ -18,12 +29,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import ProductKnowledgeCombobox from "@/components/ProductKnowledgeCombobox";
-import EaushadhiDrugCombobox from "@/components/EaushadhiDrugCombobox";
+import CategoryCombobox from "@/components/CategoryCombobox";
 import { ProductKnowledge } from "@/types/productKnowledge";
+import { formatDateTime } from "@/lib/utils";
 
-interface EaushadhiDrug {
+interface Category {
   id: string;
-  name: string;
+  slug: string;
+  title: string;
 }
 
 interface EaushadhiProductMapping {
@@ -40,13 +53,17 @@ type ProductMappingsProps = {
 };
 
 type MappingForm = {
+  category: Category | null;
   productKnowledge: ProductKnowledge | null;
-  eaushadhi_drug: EaushadhiDrug | null;
+  eaushadhi_drug_id: string;
+  eaushadhi_drug_name: string;
 };
 
 const EMPTY_MAPPING: MappingForm = {
+  category: null,
   productKnowledge: null,
-  eaushadhi_drug: null,
+  eaushadhi_drug_id: "",
+  eaushadhi_drug_name: "",
 };
 
 const ProductMappings: FC<ProductMappingsProps> = ({
@@ -55,56 +72,64 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   onMappingOpenChange,
 }) => {
   const { t } = useTranslation(I18NNAMESPACE);
+  const queryClient = useQueryClient();
 
-  const [mappings, setMappings] = useState<EaushadhiProductMapping[]>([]);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [mappingForm, setMappingForm] = useState<MappingForm>(EMPTY_MAPPING);
 
-  useEffect(() => {
-    setMappings([]);
-  }, [facilityId]);
+  const { data: mappingsData } = useQuery({
+    queryKey: ["product-mappings", facilityId],
+    queryFn: () =>
+      request<{ results: EaushadhiProductMapping[] }>(
+        `/api/care_eaushadhi/product-mappings/`,
+        HttpMethod.GET,
+        {
+          facility_id: facilityId,
+          mapping_type: "BULK_IMPORT",
+        },
+      ),
+    enabled: !!facilityId
+  });
 
-  const openEditMapping = (mapping: EaushadhiProductMapping) => {
-    setEditingId(mapping.id);
-    setMappingForm({
-      productKnowledge: {
-        id: mapping.product_knowledge_id,
-        slug: mapping.product_knowledge_id,
-        name: mapping.product_knowledge_name,
-      },
-      eaushadhi_drug: {
-        id: mapping.eaushadhi_drug_id,
-        name: mapping.eaushadhi_drug_id,
-      },
-    });
-    onMappingOpenChange(true);
-  };
+  const mappings = mappingsData?.results ?? [];
 
-  const saveMapping = () => {
-    if (!mappingForm.productKnowledge || !mappingForm.eaushadhi_drug) {
+
+  const saveMapping = async () => {
+    if (!mappingForm.productKnowledge || !mappingForm.eaushadhi_drug_id || !mappingForm.eaushadhi_drug_name) {
       return;
     }
-    const mapping = {
+
+    const payload = {
+      facility_id: facilityId,
       product_knowledge_id: mappingForm.productKnowledge.id,
-      product_knowledge_name: mappingForm.productKnowledge.name,
-      eaushadhi_drug_id: mappingForm.eaushadhi_drug.id,
+      eaushadhi_drug_id: mappingForm.eaushadhi_drug_id,
+      eaushadhi_drug_name: mappingForm.eaushadhi_drug_name,
+      mapping_type: "BULK_IMPORT",
     };
-    if (editingId) {
-      setMappings((prev) =>
-        prev.map((m) => (m.id === editingId ? { ...m, ...mapping } : m)),
+
+    try {
+      await request(
+        `/api/care_eaushadhi/product-mappings/`,
+        HttpMethod.POST,
+        payload,
       );
-    } else {
-      setMappings((prev) => [...prev, { id: crypto.randomUUID(), ...mapping }]);
+      toast.success(t("delivery_form_success"));
+      setMappingForm(EMPTY_MAPPING);
+      onMappingOpenChange(false);
+      queryClient.invalidateQueries({ queryKey: ["product-mappings", facilityId] });
+    } catch (error) {
+      toast.error(t("delivery_form_error"));
+      console.error("Failed to save mapping:", error);
     }
-    setEditingId(null);
-    setMappingForm(EMPTY_MAPPING);
-    onMappingOpenChange(false);
   };
 
-  const deleteMapping = (id: string) => {
-    setMappings((prev) => prev.filter((m) => m.id !== id));
+  const handleCategoryChange = (category: Category | null) => {
+    setMappingForm((prev) => ({
+      ...prev,
+      category,
+      productKnowledge: null,
+    }));
   };
+
 
   return (
     <div>
@@ -112,7 +137,6 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         open={mappingOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setEditingId(null);
             setMappingForm(EMPTY_MAPPING);
           }
           onMappingOpenChange(open);
@@ -121,38 +145,81 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         <DialogContent className="max-w-md w-[95%] rounded-md">
           <DialogHeader>
             <DialogTitle>
-              {editingId ? t("edit_mapping") : t("add_mapping")}
+              {t("add_product_mapping")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{t("product_knowledge")}</Label>
+              <Label>
+                {t("create_pk_field_category")}
+                <span className="text-red-500 ml-0.5">*</span>
+              </Label>
+              <CategoryCombobox
+                facilityId={facilityId}
+                value={mappingForm.category}
+                onChange={handleCategoryChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>
+                {t("product_knowledge")}
+                <span className="text-red-500 ml-0.5">*</span>
+              </Label>
               <ProductKnowledgeCombobox
                 facilityId={facilityId}
                 value={mappingForm.productKnowledge}
                 onChange={(productKnowledge) =>
                   setMappingForm((prev) => ({ ...prev, productKnowledge }))
                 }
+                categorySlug={mappingForm.category?.slug}
               />
             </div>
             <div className="space-y-2">
-              <Label>{t("eaushadhi_drug")}</Label>
-              <EaushadhiDrugCombobox
-                value={mappingForm.eaushadhi_drug}
-                onChange={(eaushadhi_drug) =>
-                  setMappingForm((prev) => ({ ...prev, eaushadhi_drug }))
+              <Label>
+                {t("eaushadhi_drug")} ID
+                <span className="text-red-500 ml-0.5">*</span>
+              </Label>
+              <Input
+                type="text"
+                placeholder="e.g., DRUG123"
+                value={mappingForm.eaushadhi_drug_id}
+                onChange={(e) =>
+                  setMappingForm((prev) => ({
+                    ...prev,
+                    eaushadhi_drug_id: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>
+                {t("eaushadhi_drug")} Name
+                <span className="text-red-500 ml-0.5">*</span>
+              </Label>
+              <Input
+                type="text"
+                placeholder="e.g., Paracetamol 500mg"
+                value={mappingForm.eaushadhi_drug_name}
+                onChange={(e) =>
+                  setMappingForm((prev) => ({
+                    ...prev,
+                    eaushadhi_drug_name: e.target.value,
+                  }))
                 }
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <DialogClose asChild>
               <Button variant="outline">{t("cancel")}</Button>
             </DialogClose>
             <Button
               variant="primary"
               disabled={
-                !mappingForm.productKnowledge || !mappingForm.eaushadhi_drug
+                !mappingForm.category ||
+                !mappingForm.productKnowledge ||
+                !mappingForm.eaushadhi_drug_id ||
+                !mappingForm.eaushadhi_drug_name
               }
               onClick={saveMapping}
             >
@@ -171,45 +238,63 @@ const ProductMappings: FC<ProductMappingsProps> = ({
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200">
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-4 bg-gray-100 px-4 py-2 text-xs font-medium uppercase text-gray-500">
-            <span>{t("product_knowledge")}</span>
-            <span>{t("eaushadhi_drug")}</span>
-            <span>{t("actions")}</span>
-          </div>
-          <div className="divide-y divide-gray-200 bg-white">
-            {mappings.map((mapping) => (
-              <div
-                key={mapping.id}
-                className="grid grid-cols-[1fr_1fr_auto] items-center gap-4 px-4 py-3"
-              >
-                <span className="text-sm font-medium text-gray-900">
-                  {mapping.product_knowledge_name}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {mapping.eaushadhi_drug_id}
-                </span>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => openEditMapping(mapping)}
-                    aria-label={t("edit_mapping")}
-                  >
-                    <PencilIcon className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteMapping(mapping.id)}
-                    aria-label={t("delete_mapping")}
-                  >
-                    <Trash2Icon className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="border border-gray-200 rounded-lg bg-white overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-gray-50 border-b border-gray-200">
+              <TableRow className="hover:bg-gray-50">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  {t("eaushadhi_drug")}
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  {t("product_knowledge")}
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  {t("create_pk_field_category")}
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  Created By
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  Created Date
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-100">
+              {mappings.map((mapping) => (
+                <TableRow key={mapping.id} className="hover:bg-gray-50">
+                  <TableCell className="px-4 py-3">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {mapping.eaushadhi_drug_name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Drug ID: {mapping.eaushadhi_drug_id}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-gray-900">
+                    <div>
+                      <p className="font-medium">
+                        {mapping.product_knowledge?.name || "—"}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {t("create_pk_field_slug")}: {mapping.product_knowledge?.slug_config?.slug_value || "—"}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-gray-900">
+                    {mapping.product_knowledge?.category?.title || "—"}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-gray-900">
+                    {mapping.created_by?.first_name} {mapping.created_by?.last_name}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-gray-900">
+                    {formatDateTime(mapping.created_date)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

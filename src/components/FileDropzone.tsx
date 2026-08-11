@@ -61,7 +61,10 @@ const FileDropzone: FC<FileDropzoneProps> = ({
             type="file"
             accept={accept}
             className="hidden"
-            onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              onFileChange(file && isFileAccepted(file) ? file : null);
+            }}
           />
         </label>
       </Button>

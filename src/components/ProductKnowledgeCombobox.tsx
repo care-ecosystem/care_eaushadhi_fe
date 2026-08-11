@@ -19,12 +19,14 @@ type ProductKnowledgeComboboxProps = {
   facilityId: string;
   value: ProductKnowledge | null;
   onChange: (productKnowledge: ProductKnowledge) => void;
+  categorySlug?: string;
 };
 
 const ProductKnowledgeCombobox: FC<ProductKnowledgeComboboxProps> = ({
   facilityId,
   value,
   onChange,
+  categorySlug,
 }) => {
   const { t } = useTranslation(I18NNAMESPACE);
   const [open, setOpen] = useState(false);
@@ -37,7 +39,7 @@ const ProductKnowledgeCombobox: FC<ProductKnowledgeComboboxProps> = ({
   }, [search]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["product-knowledge-search", facilityId, debouncedSearch],
+    queryKey: ["product-knowledge-search", facilityId, categorySlug, debouncedSearch],
     queryFn: () =>
       request<{ results: ProductKnowledge[] }>(
         `/api/v1/product_knowledge/`,
@@ -46,10 +48,11 @@ const ProductKnowledgeCombobox: FC<ProductKnowledgeComboboxProps> = ({
           facility: facilityId,
           include_instance: "true",
           name: debouncedSearch || undefined,
+          category: categorySlug || undefined,
           limit: 10,
         },
       ),
-    enabled: open,
+    enabled: open && !!categorySlug,
   });
 
   const results = data?.results ?? [];
@@ -62,6 +65,7 @@ const ProductKnowledgeCombobox: FC<ProductKnowledgeComboboxProps> = ({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={!categorySlug}
           className="w-full justify-between font-normal"
         >
           <span className={cn("truncate", !value && "text-gray-500")}>

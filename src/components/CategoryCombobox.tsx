@@ -1,7 +1,10 @@
 import { FC, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckIcon, ChevronsUpDownIcon, SearchIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
 
+import { request } from "@/apis/query";
+import { HttpMethod } from "@/apis/types";
 import { cn } from "@/lib/utils";
 import { I18NNAMESPACE } from "@/lib/contants";
 import { Button } from "@/components/ui/button";
@@ -11,30 +14,38 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-interface EaushadhiDrug {
+interface Category {
   id: string;
-  name: string;
+  slug: string;
+  title: string;
 }
 
-type EaushadhiDrugComboboxProps = {
-  value: EaushadhiDrug | null;
-  onChange: (drug: EaushadhiDrug) => void;
+type CategoryComboboxProps = {
+  facilityId: string;
+  value: Category | null;
+  onChange: (category: Category | null) => void;
 };
 
-// TODO: Replace with API call once backend endpoint is available
-const EAUSHADHI_DRUGS: EaushadhiDrug[] = [];
-
-const EaushadhiDrugCombobox: FC<EaushadhiDrugComboboxProps> = ({
+const CategoryCombobox: FC<CategoryComboboxProps> = ({
+  facilityId,
   value,
   onChange,
 }) => {
   const { t } = useTranslation(I18NNAMESPACE);
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
 
-  const filteredDrugs = EAUSHADHI_DRUGS.filter((drug) =>
-    drug.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const { data } = useQuery({
+    queryKey: ["resourceCategories", facilityId, "product_knowledge"],
+    queryFn: () =>
+      request<{
+        results: Category[];
+      }>(`/api/v1/facility/${facilityId}/resource_category/`, HttpMethod.GET, {
+        resource_type: "product_knowledge",
+      }),
+    enabled: open,
+  });
+
+  const results = data?.results ?? [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -47,7 +58,7 @@ const EaushadhiDrugCombobox: FC<EaushadhiDrugComboboxProps> = ({
           className="w-full justify-between font-normal"
         >
           <span className={cn("truncate", !value && "text-gray-500")}>
-            {value ? value.name : t("eaushadhi_drug_placeholder")}
+            {value ? value.title : t("create_pk_select_category")}
           </span>
           <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
         </Button>
@@ -56,39 +67,29 @@ const EaushadhiDrugCombobox: FC<EaushadhiDrugComboboxProps> = ({
         align="start"
         className="w-(--radix-popover-trigger-width) p-0"
       >
-        <div className="flex h-9 items-center gap-2 border-b border-gray-200 px-3">
-          <SearchIcon className="size-4 shrink-0 opacity-50" />
-          <input
-            autoFocus
-            placeholder={t("search_eaushadhi_drug")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="flex h-9 w-full border-0 bg-transparent text-sm focus:outline-none focus:ring-0 placeholder:text-gray-500"
-          />
-        </div>
         <div className="max-h-60 overflow-y-auto p-1">
-          {filteredDrugs.length === 0 && (
+          {results.length === 0 && (
             <p className="py-6 text-center text-sm text-gray-500">
-              {t("no_product_knowledge_found")}
+              {t("create_pk_no_categories")}
             </p>
           )}
-          {filteredDrugs.map((drug) => (
+          {results.map((category) => (
             <button
-              key={drug.id}
+              key={category.id}
               type="button"
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden hover:bg-gray-100 focus-visible:bg-gray-100"
               onClick={() => {
-                onChange(drug);
+                onChange(category);
                 setOpen(false);
               }}
             >
               <CheckIcon
                 className={cn(
                   "size-4 shrink-0 text-gray-900",
-                  value?.id === drug.id ? "opacity-100" : "opacity-0",
+                  value?.id === category.id ? "opacity-100" : "opacity-0",
                 )}
               />
-              {drug.name}
+              {category.title}
             </button>
           ))}
         </div>
@@ -97,4 +98,4 @@ const EaushadhiDrugCombobox: FC<EaushadhiDrugComboboxProps> = ({
   );
 };
 
-export default EaushadhiDrugCombobox;
+export default CategoryCombobox;

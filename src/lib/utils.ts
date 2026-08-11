@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { navigate } from "raviger";
+import dayjs from "dayjs";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -112,4 +113,9 @@ export function extractGenericName(drug_name: string): string {
     }
   }
   return generic.length > 0 ? generic.join(" ") : words[0];
+}
+
+export function formatDateTime(date: string | null | undefined, format = "DD/MM/YYYY"): string {
+  if (!date) return "—";
+  return dayjs(date).format(format);
 }
