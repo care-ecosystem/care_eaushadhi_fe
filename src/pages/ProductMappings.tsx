@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   FolderOpenIcon,
+  PencilIcon,
 } from "lucide-react";
 
 import { I18NNAMESPACE } from "@/lib/contants";
@@ -44,6 +45,15 @@ interface EaushadhiProductMapping {
   product_knowledge_id: string;
   product_knowledge_name: string;
   eaushadhi_drug_id: string;
+  eaushadhi_drug_name: string;
+  product_knowledge?: {
+    id: string;
+    name: string;
+    slug_config?: { slug_value: string };
+    category?: { id: string; title: string; slug: string };
+  };
+  created_by?: { first_name: string; last_name: string };
+  created_date?: string;
 }
 
 type ProductMappingsProps = {
@@ -75,6 +85,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   const queryClient = useQueryClient();
 
   const [mappingForm, setMappingForm] = useState<MappingForm>(EMPTY_MAPPING);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { data: mappingsData } = useQuery({
     queryKey: ["product-mappings", facilityId],
@@ -98,28 +109,64 @@ const ProductMappings: FC<ProductMappingsProps> = ({
       return;
     }
 
-    const payload = {
-      facility_id: facilityId,
-      product_knowledge_id: mappingForm.productKnowledge.id,
-      eaushadhi_drug_id: mappingForm.eaushadhi_drug_id,
-      eaushadhi_drug_name: mappingForm.eaushadhi_drug_name,
-      mapping_type: "BULK_IMPORT",
-    };
-
     try {
-      await request(
-        `/api/care_eaushadhi/product-mappings/`,
-        HttpMethod.POST,
-        payload,
-      );
-      toast.success(t("delivery_form_success"));
+      if (editingId) {
+        const updatePayload = {
+          eaushadhi_drug_id: mappingForm.eaushadhi_drug_id,
+          eaushadhi_drug_name: mappingForm.eaushadhi_drug_name,
+        };
+        await request(
+          `/api/care_eaushadhi/product-mappings/${editingId}/`,
+          HttpMethod.PATCH,
+          updatePayload,
+        );
+        toast.success(t("mapping_updated_success"));
+      } else {
+        const createPayload = {
+          facility_id: facilityId,
+          product_knowledge_id: mappingForm.productKnowledge.id,
+          eaushadhi_drug_id: mappingForm.eaushadhi_drug_id,
+          eaushadhi_drug_name: mappingForm.eaushadhi_drug_name,
+          mapping_type: "BULK_IMPORT",
+        };
+        await request(
+          `/api/care_eaushadhi/product-mappings/`,
+          HttpMethod.POST,
+          createPayload,
+        );
+        toast.success(t("mapping_created_success"));
+      }
       setMappingForm(EMPTY_MAPPING);
+      setEditingId(null);
       onMappingOpenChange(false);
       queryClient.invalidateQueries({ queryKey: ["product-mappings", facilityId] });
     } catch (error) {
-      toast.error(t("delivery_form_error"));
+      if (editingId) {
+        toast.error(t("mapping_updated_error"));
+      } else {
+        toast.error(t("mapping_created_error"));
+      }
       console.error("Failed to save mapping:", error);
     }
+  };
+
+  const handleEditMapping = (mapping: EaushadhiProductMapping) => {
+    const productKnowledge = mapping.product_knowledge
+      ? {
+          id: mapping.product_knowledge.id,
+          name: mapping.product_knowledge.name,
+          slug: mapping.product_knowledge.slug_config?.slug_value || "",
+        }
+      : null;
+
+    setMappingForm({
+      category: mapping.product_knowledge?.category || null,
+      productKnowledge,
+      eaushadhi_drug_id: mapping.eaushadhi_drug_id,
+      eaushadhi_drug_name: mapping.eaushadhi_drug_name,
+    });
+    setEditingId(mapping.id);
+    onMappingOpenChange(true);
   };
 
   const handleCategoryChange = (category: Category | null) => {
@@ -138,6 +185,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         onOpenChange={(open) => {
           if (!open) {
             setMappingForm(EMPTY_MAPPING);
+            setEditingId(null);
           }
           onMappingOpenChange(open);
         }}
@@ -145,7 +193,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         <DialogContent className="max-w-md w-[95%] rounded-md">
           <DialogHeader>
             <DialogTitle>
-              {t("add_product_mapping")}
+              {editingId ? t("edit_mapping") : t("add_product_mapping")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -154,29 +202,41 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                 {t("create_pk_field_category")}
                 <span className="text-red-500 ml-0.5">*</span>
               </Label>
-              <CategoryCombobox
-                facilityId={facilityId}
-                value={mappingForm.category}
-                onChange={handleCategoryChange}
-              />
+              {editingId ? (
+                <div className="px-3 py-2 rounded-md border border-gray-300 bg-gray-50 text-gray-600">
+                  {mappingForm.category?.title || "—"}
+                </div>
+              ) : (
+                <CategoryCombobox
+                  facilityId={facilityId}
+                  value={mappingForm.category}
+                  onChange={handleCategoryChange}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>
                 {t("product_knowledge")}
                 <span className="text-red-500 ml-0.5">*</span>
               </Label>
-              <ProductKnowledgeCombobox
-                facilityId={facilityId}
-                value={mappingForm.productKnowledge}
-                onChange={(productKnowledge) =>
-                  setMappingForm((prev) => ({ ...prev, productKnowledge }))
-                }
-                categorySlug={mappingForm.category?.slug}
-              />
+              {editingId ? (
+                <div className="px-3 py-2 rounded-md border border-gray-300 bg-gray-50 text-gray-600">
+                  {mappingForm.productKnowledge?.name || "—"}
+                </div>
+              ) : (
+                <ProductKnowledgeCombobox
+                  facilityId={facilityId}
+                  value={mappingForm.productKnowledge}
+                  onChange={(productKnowledge) =>
+                    setMappingForm((prev) => ({ ...prev, productKnowledge }))
+                  }
+                  categorySlug={mappingForm.category?.slug}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>
-                {t("eaushadhi_drug")} ID
+                {t("drug_id_label")}
                 <span className="text-red-500 ml-0.5">*</span>
               </Label>
               <Input
@@ -193,7 +253,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
             </div>
             <div className="space-y-2">
               <Label>
-                {t("eaushadhi_drug")} Name
+                {t("drug_name_label")}
                 <span className="text-red-500 ml-0.5">*</span>
               </Label>
               <Input
@@ -252,10 +312,13 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                   {t("create_pk_field_category")}
                 </TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
-                  Created By
+                  {t("created_by")}
                 </TableHead>
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
-                  Created Date
+                  {t("created_date")}
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                  {t("actions")}
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -268,7 +331,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                         {mapping.eaushadhi_drug_name}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Drug ID: {mapping.eaushadhi_drug_id}
+                        {t("drug_id_label")}: {mapping.eaushadhi_drug_id}
                       </p>
                     </div>
                   </TableCell>
@@ -290,6 +353,16 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                   </TableCell>
                   <TableCell className="px-4 py-3 text-gray-900">
                     {formatDateTime(mapping.created_date)}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditMapping(mapping)}
+                    >
+                      <PencilIcon className="mr-2 size-4" />
+                      {t("edit")}
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
