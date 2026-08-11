@@ -22,10 +22,20 @@ const FileDropzone: FC<FileDropzoneProps> = ({
 }) => {
   const { dragOver, onDragOver, onDragLeave, setDragOver } = useDragAndDrop();
 
+  const isFileAccepted = (file: File): boolean => {
+    const extensions = accept.split(",").map((ext) => ext.trim().toLowerCase());
+    return extensions.some(
+      (ext) =>
+        (ext.startsWith(".") && file.name.toLowerCase().endsWith(ext)) ||
+        (!ext.startsWith(".") && file.type === ext),
+    );
+  };
+
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
-    onFileChange(e.dataTransfer.files?.[0] ?? null);
+    const file = e.dataTransfer.files?.[0];
+    onFileChange(file && isFileAccepted(file) ? file : null);
   };
 
   return (

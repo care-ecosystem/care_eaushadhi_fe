@@ -1,4 +1,4 @@
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FolderOpenIcon,
@@ -61,6 +61,10 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [mappingForm, setMappingForm] = useState<MappingForm>(EMPTY_MAPPING);
 
+  useEffect(() => {
+    setMappings([]);
+  }, [facilityId]);
+
   const openEditMapping = (mapping: EaushadhiProductMapping) => {
     setEditingId(mapping.id);
     setMappingForm({
@@ -93,6 +97,8 @@ const ProductMappings: FC<ProductMappingsProps> = ({
     } else {
       setMappings((prev) => [...prev, { id: crypto.randomUUID(), ...mapping }]);
     }
+    setEditingId(null);
+    setMappingForm(EMPTY_MAPPING);
     onMappingOpenChange(false);
   };
 
@@ -102,7 +108,16 @@ const ProductMappings: FC<ProductMappingsProps> = ({
 
   return (
     <div>
-      <Dialog open={mappingOpen} onOpenChange={onMappingOpenChange}>
+      <Dialog
+        open={mappingOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingId(null);
+            setMappingForm(EMPTY_MAPPING);
+          }
+          onMappingOpenChange(open);
+        }}
+      >
         <DialogContent className="max-w-md w-[95%] rounded-md">
           <DialogHeader>
             <DialogTitle>

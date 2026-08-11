@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 import {
   Select,
@@ -7,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { I18NNAMESPACE } from "@/lib/contants";
 import { request } from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 
@@ -24,6 +26,7 @@ export default function FacilitySelector({
   value,
   onSelect,
 }: FacilitySelectorProps) {
+  const { t } = useTranslation(I18NNAMESPACE);
   const {
     data: facilitiesData,
     isLoading,
@@ -43,11 +46,11 @@ export default function FacilitySelector({
   return (
     <div className="flex flex-col gap-2">
       <label className="text-sm font-medium text-gray-700">
-        Select Facility
+        {t("facility")}
       </label>
       <Select value={value} onValueChange={onSelect} disabled={isLoading}>
         <SelectTrigger>
-          <SelectValue placeholder={isLoading ? "Loading..." : "Select a facility"} />
+          <SelectValue placeholder={isLoading ? t("loading") : t("select_facility")} />
         </SelectTrigger>
         <SelectContent>
           {facilities.map((facility) => (

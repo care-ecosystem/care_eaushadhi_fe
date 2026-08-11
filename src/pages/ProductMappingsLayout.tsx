@@ -50,7 +50,13 @@ export default function ProductMappingsLayout() {
           />
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <Dialog
+            open={uploadOpen}
+            onOpenChange={(open) => {
+              if (!open) setCsvFile(null);
+              setUploadOpen(open);
+            }}
+          >
             <DialogTrigger asChild>
               <Button variant="outline" disabled={!selectedFacilityId}>
                 <UploadIcon className="mr-2 size-4" />
