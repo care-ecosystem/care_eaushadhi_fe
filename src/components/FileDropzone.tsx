@@ -11,6 +11,7 @@ type FileDropzoneProps = {
   onFileChange: (file: File | null) => void;
   dropLabel: string;
   browseLabel: string;
+  onInvalidFile?: (fileName: string) => void;
 };
 
 const FileDropzone: FC<FileDropzoneProps> = ({
@@ -19,6 +20,7 @@ const FileDropzone: FC<FileDropzoneProps> = ({
   onFileChange,
   dropLabel,
   browseLabel,
+  onInvalidFile,
 }) => {
   const { dragOver, onDragOver, onDragLeave, setDragOver } = useDragAndDrop();
 
@@ -31,11 +33,20 @@ const FileDropzone: FC<FileDropzoneProps> = ({
     );
   };
 
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    if (isFileAccepted(file)) {
+      onFileChange(file);
+    } else {
+      onInvalidFile?.(file.name);
+      onFileChange(null);
+    }
+  };
+
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    onFileChange(file && isFileAccepted(file) ? file : null);
+    handleFile(e.dataTransfer.files?.[0]);
   };
 
   return (
@@ -61,10 +72,7 @@ const FileDropzone: FC<FileDropzoneProps> = ({
             type="file"
             accept={accept}
             className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              onFileChange(file && isFileAccepted(file) ? file : null);
-            }}
+            onChange={(e) => handleFile(e.target.files?.[0])}
           />
         </label>
       </Button>

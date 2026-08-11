@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PlusIcon, UploadIcon, Settings2Icon } from "lucide-react";
+import { PlusIcon, UploadIcon, Settings2Icon, DownloadIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import FacilitySelector from "@/components/FacilitySelector";
 import { I18NNAMESPACE } from "@/lib/contants";
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import FileDropzone from "@/components/FileDropzone";
 import ProductMappings from "./ProductMappings";
+import { downloadProductMappingTemplate } from "@/lib/utils";
 
 export default function ProductMappingsLayout() {
   const { t } = useTranslation(I18NNAMESPACE);
@@ -29,6 +31,10 @@ export default function ProductMappingsLayout() {
     // TODO: send csvFile to the bulk mapping upload API once available
     setCsvFile(null);
     setUploadOpen(false);
+  };
+
+  const handleInvalidFile = (fileName: string) => {
+    toast.error(t("invalid_file_format"));
   };
 
   return (
@@ -76,14 +82,25 @@ export default function ProductMappingsLayout() {
                 onFileChange={setCsvFile}
                 dropLabel={t("drag_drop_csv_to_upload")}
                 browseLabel={t("browse_file")}
+                onInvalidFile={handleInvalidFile}
               />
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">{t("cancel")}</Button>
-                </DialogClose>
-                <Button variant="primary" disabled={!csvFile} onClick={uploadCsv}>
-                  {t("upload")}
+              <DialogFooter className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadProductMappingTemplate}
+                >
+                  <DownloadIcon className="mr-2 size-4" />
+                  {t("download_template")}
                 </Button>
+                <div className="flex gap-2">
+                  <DialogClose asChild>
+                    <Button variant="outline">{t("cancel")}</Button>
+                  </DialogClose>
+                  <Button variant="primary" disabled={!csvFile} onClick={uploadCsv}>
+                    {t("upload")}
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>

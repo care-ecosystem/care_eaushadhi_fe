@@ -119,3 +119,34 @@ export function formatDateTime(date: string | null | undefined, format = "DD/MM/
   if (!date) return "—";
   return dayjs(date).format(format);
 }
+
+export function downloadCsv(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export function downloadProductMappingTemplate(): void {
+  const headers = [
+    "EAushadhi Drug ID",
+    "EAushadhi Drug Name",
+    "Product Knowledge Name",
+    "Product Knowledge Slug",
+  ];
+  const sampleData = [
+    ["D001", "Paracetamol 500mg", "Acetaminophen 500mg", "acetaminophen-500mg"],
+    ["D002", "Ibuprofen 200mg", "Ibuprofen 200mg Tablet", "ibuprofen-200mg"],
+    ["D003", "Amoxicillin 250mg", "Amoxicillin 250mg Capsule", "amoxicillin-250mg"],
+  ];
+
+  const rows = [
+    headers.join(","),
+    ...sampleData.map(row => row.join(",")),
+  ];
+  const csv = rows.join("\n");
+  downloadCsv("product_mapping_template.csv", csv);
+}
