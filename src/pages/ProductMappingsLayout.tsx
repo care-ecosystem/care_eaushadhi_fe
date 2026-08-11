@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { PlusIcon, UploadIcon, Settings2Icon, DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -30,15 +30,30 @@ export default function ProductMappingsLayout() {
   const [mappingOpen, setMappingOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<FormattedError[]>([]);
+  const fileReaderRef = useRef<FileReader | null>(null);
+  const selectionIdRef = useRef<number>(0);
 
   const handleFileSelected = (file: File | null) => {
+    if (fileReaderRef.current) {
+      fileReaderRef.current.abort();
+    }
+
+    selectionIdRef.current += 1;
+    const currentSelectionId = selectionIdRef.current;
+
     setCsvFile(file);
     setValidationErrors([]);
 
     if (!file) return;
 
     const reader = new FileReader();
+    fileReaderRef.current = reader;
+
     reader.onload = (e) => {
+      if (currentSelectionId !== selectionIdRef.current) {
+        return;
+      }
+
       try {
         const csvText = e.target?.result as string;
         const validation = validateCSV(csvText);
@@ -77,6 +92,10 @@ export default function ProductMappingsLayout() {
           toast.success(`Valid CSV with ${validation.rowCount} rows`);
         }
       } catch (error) {
+        if (currentSelectionId !== selectionIdRef.current) {
+          return;
+        }
+
         setValidationErrors([
           {
             type: "parse_error",

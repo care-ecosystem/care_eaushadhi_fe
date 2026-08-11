@@ -1,4 +1,4 @@
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -86,6 +86,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
 
   const [mappingForm, setMappingForm] = useState<MappingForm>(EMPTY_MAPPING);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { data: mappingsData } = useQuery({
     queryKey: ["product-mappings", facilityId],
@@ -103,11 +104,24 @@ const ProductMappings: FC<ProductMappingsProps> = ({
 
   const mappings = mappingsData?.results ?? [];
 
+  useEffect(() => {
+    setMappingForm(EMPTY_MAPPING);
+    setEditingId(null);
+  }, [facilityId]);
 
   const saveMapping = async () => {
-    if (!mappingForm.productKnowledge || !mappingForm.eaushadhi_drug_id || !mappingForm.eaushadhi_drug_name) {
+    const hasRequiredDrugFields = mappingForm.eaushadhi_drug_id && mappingForm.eaushadhi_drug_name;
+    const hasRequiredCreateFields = mappingForm.productKnowledge && mappingForm.category && hasRequiredDrugFields;
+
+    if (editingId ? !hasRequiredDrugFields : !hasRequiredCreateFields) {
       return;
     }
+
+    if (isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
       if (editingId) {
@@ -124,7 +138,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
       } else {
         const createPayload = {
           facility_id: facilityId,
-          product_knowledge_id: mappingForm.productKnowledge.id,
+          product_knowledge_id: mappingForm.productKnowledge?.id,
           eaushadhi_drug_id: mappingForm.eaushadhi_drug_id,
           eaushadhi_drug_name: mappingForm.eaushadhi_drug_name,
           mapping_type: "BULK_IMPORT",
@@ -147,6 +161,8 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         toast.error(t("mapping_created_error"));
       }
       console.error("Failed to save mapping:", error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -276,10 +292,11 @@ const ProductMappings: FC<ProductMappingsProps> = ({
             <Button
               variant="primary"
               disabled={
-                !mappingForm.category ||
-                !mappingForm.productKnowledge ||
-                !mappingForm.eaushadhi_drug_id ||
-                !mappingForm.eaushadhi_drug_name
+                isSaving || (
+                  editingId
+                    ? !mappingForm.eaushadhi_drug_id || !mappingForm.eaushadhi_drug_name
+                    : !mappingForm.category || !mappingForm.productKnowledge || !mappingForm.eaushadhi_drug_id || !mappingForm.eaushadhi_drug_name
+                )
               }
               onClick={saveMapping}
             >

@@ -11,6 +11,7 @@ type FileDropzoneProps = {
   onFileChange: (file: File | null) => void;
   dropLabel: string;
   browseLabel: string;
+  changeLabelText?: string;
   onInvalidFile?: (fileName: string) => void;
 };
 
@@ -20,6 +21,7 @@ const FileDropzone: FC<FileDropzoneProps> = ({
   onFileChange,
   dropLabel,
   browseLabel,
+  changeLabelText,
   onInvalidFile,
 }) => {
   const { dragOver, onDragOver, onDragLeave, setDragOver } = useDragAndDrop();
@@ -51,23 +53,35 @@ const FileDropzone: FC<FileDropzoneProps> = ({
 
   return (
     <div
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDragOver={selectedFile ? undefined : onDragOver}
+      onDragLeave={selectedFile ? undefined : onDragLeave}
+      onDrop={selectedFile ? undefined : onDrop}
       className={cn(
-        "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 py-8 text-center transition-colors",
-        dragOver ? "border-primary-500 bg-primary-100" : "border-gray-300",
+        "flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-3 py-8 text-center transition-colors",
+        selectedFile
+          ? "border-gray-300 bg-gray-50"
+          : cn("border-dashed", dragOver ? "border-primary-500 bg-primary-100" : "border-gray-300"),
       )}
     >
-      <UploadCloudIcon
-        className={cn("size-8", dragOver ? "text-primary-600" : "text-gray-400")}
-      />
-      <p className="text-sm text-gray-600">
-        {selectedFile ? selectedFile.name : dropLabel}
-      </p>
+      {selectedFile ? (
+        <>
+          <div className="flex items-center gap-2">
+            <UploadCloudIcon className="size-5 text-green-600" />
+            <span className="font-medium text-gray-900">{selectedFile.name}</span>
+          </div>
+          <p className="text-xs text-gray-500">File uploaded successfully</p>
+        </>
+      ) : (
+        <>
+          <UploadCloudIcon
+            className={cn("size-8", dragOver ? "text-primary-600" : "text-gray-400")}
+          />
+          <p className="text-sm text-gray-600">{dropLabel}</p>
+        </>
+      )}
       <Button type="button" variant="outline" size="sm" asChild>
         <label className="cursor-pointer">
-          {browseLabel}
+          {selectedFile ? (changeLabelText || "Change file") : browseLabel}
           <input
             type="file"
             accept={accept}

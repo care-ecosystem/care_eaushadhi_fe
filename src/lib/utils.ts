@@ -138,14 +138,15 @@ export function downloadProductMappingTemplate(): void {
     "Product Knowledge Slug",
   ];
   const sampleData = [
-    ["D001", "Paracetamol 500mg", "Acetaminophen 500mg", "acetaminophen-500mg"],
-    ["D002", "Ibuprofen 200mg", "Ibuprofen 200mg Tablet", "ibuprofen-200mg"],
-    ["D003", "Amoxicillin 250mg", "Amoxicillin 250mg Capsule", "amoxicillin-250mg"],
+    ["6.6.19", "Cefotaxime Injection IP 1gm 1x1Vial", "Cefotaxime 1gm Injection", "cefotaxime-1gm-injection"],
+    ["D00045", "Ibuprofen Oral Suspension IP 100mg/5ml 1x60ml bottle", "Ibuprofen 100mg/5ml Suspension", "ibuprofen-suspension"],
+    ["D00046", "Aceclofenac Tablet 100 mg 1x1", "Aceclofenac 100mg Tablet", "aceclofenac-100mg"],
+    ["D00146", "Carbamazepine Tablet IP 200 mg 1x1", "Carbamazepine 200mg Tablet", "carbamazepine-200mg"],
   ];
 
   const rows = [
-    headers.join(","),
-    ...sampleData.map(row => row.join(",")),
+    headers.map(h => `"${h}"`).join(","),
+    ...sampleData.map(row => row.map(cell => `"${cell}"`).join(",")),
   ];
   const csv = rows.join("\n");
   downloadCsv("product_mapping_template.csv", csv);

@@ -68,9 +68,65 @@ export function validateCSV(csvText: string): {
   }
 
   try {
-    const lines = csvText.split("\n").filter((line) => line.trim().length > 0);
+    const records: string[][] = [];
+    let current = "";
+    let inQuotes = false;
+    let parts: string[] = [];
 
-    if (lines.length < 2) {
+    for (let i = 0; i < csvText.length; i++) {
+      const char = csvText[i];
+
+      if (inQuotes) {
+        if (char === '"') {
+          if (csvText[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += char;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ",") {
+          parts.push(current.trim());
+          current = "";
+        } else if (char === "\n" || char === "\r") {
+          if (current.trim() || parts.length > 0) {
+            parts.push(current.trim());
+            if (parts.some((p) => p.length > 0)) {
+              records.push(parts);
+            }
+            parts = [];
+            current = "";
+          }
+          if (char === "\r" && csvText[i + 1] === "\n") {
+            i++;
+          }
+        } else {
+          current += char;
+        }
+      }
+    }
+
+    if (inQuotes) {
+      return {
+        valid: false,
+        errors: { parseError: "Unterminated quoted field in CSV" },
+        rowCount: 0,
+      };
+    }
+
+    if (current.trim() || parts.length > 0) {
+      parts.push(current.trim());
+      if (parts.some((p) => p.length > 0)) {
+        records.push(parts);
+      }
+    }
+
+    if (records.length < 2) {
       return {
         valid: false,
         errors: {
@@ -80,39 +136,8 @@ export function validateCSV(csvText: string): {
       };
     }
 
-    const headers = lines[0].split(",").map((h) => h.trim());
-    const rows = lines.slice(1).map((line) => {
-      const parts: string[] = [];
-      let current = "";
-      let inQuotes = false;
-
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (inQuotes) {
-          if (char === '"') {
-            if (line[i + 1] === '"') {
-              current += '"';
-              i++;
-            } else {
-              inQuotes = false;
-            }
-          } else {
-            current += char;
-          }
-        } else {
-          if (char === '"') {
-            inQuotes = true;
-          } else if (char === ",") {
-            parts.push(current.trim());
-            current = "";
-          } else {
-            current += char;
-          }
-        }
-      }
-      parts.push(current.trim());
-      return parts;
-    });
+    const headers = records[0].map((h) => h.trim());
+    const rows = records.slice(1);
 
     const missingHeaders = validateCSVHeaders(headers);
     if (missingHeaders.length > 0) {
