@@ -16,9 +16,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import FileDropzone from "@/components/FileDropzone";
 import ProductMappings from "./ProductMappings";
 import { downloadProductMappingTemplate } from "@/lib/utils";
+import { validateCSV } from "@/utils/csvValidation";
+import type { FormattedError } from "@/utils/csvValidation";
 
 export default function ProductMappingsLayout() {
   const { t } = useTranslation(I18NNAMESPACE);
@@ -26,15 +29,77 @@ export default function ProductMappingsLayout() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [validationErrors, setValidationErrors] = useState<FormattedError[]>([]);
+
+  const handleFileSelected = (file: File | null) => {
+    setCsvFile(file);
+    setValidationErrors([]);
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const csvText = e.target?.result as string;
+        const validation = validateCSV(csvText);
+
+        if (!validation.valid) {
+          const errors: FormattedError[] = [];
+
+          if (validation.errors.parseError) {
+            errors.push({
+              type: "parse_error",
+              data: validation.errors.parseError,
+            });
+          }
+
+          if (validation.errors.missingHeaders?.length) {
+            errors.push({
+              type: "missing_headers",
+              data: validation.errors.missingHeaders,
+            });
+          }
+
+          if (validation.errors.emptyRows?.length) {
+            const rowsDisplay =
+              validation.errors.emptyRows.length > 10
+                ? `${validation.errors.emptyRows.slice(0, 10).join(", ")}, ... (${validation.errors.emptyRows.length} total)`
+                : validation.errors.emptyRows.join(", ");
+            errors.push({
+              type: "empty_rows",
+              data: rowsDisplay,
+            });
+          }
+
+          setValidationErrors(errors);
+          setCsvFile(null);
+        } else {
+          toast.success(`Valid CSV with ${validation.rowCount} rows`);
+        }
+      } catch (error) {
+        setValidationErrors([
+          {
+            type: "parse_error",
+            data: error instanceof Error ? error.message : "Unknown error",
+          },
+        ]);
+        setCsvFile(null);
+      }
+    };
+
+    reader.readAsText(file);
+  };
 
   const uploadCsv = () => {
     // TODO: send csvFile to the bulk mapping upload API once available
     setCsvFile(null);
     setUploadOpen(false);
+    setValidationErrors([]);
   };
 
   const handleInvalidFile = (fileName: string) => {
     toast.error(t("invalid_file_format"));
+    setValidationErrors([]);
   };
 
   return (
@@ -59,7 +124,10 @@ export default function ProductMappingsLayout() {
           <Dialog
             open={uploadOpen}
             onOpenChange={(open) => {
-              if (!open) setCsvFile(null);
+              if (!open) {
+                setCsvFile(null);
+                setValidationErrors([]);
+              }
               setUploadOpen(open);
             }}
           >
@@ -79,11 +147,37 @@ export default function ProductMappingsLayout() {
               <FileDropzone
                 accept=".csv"
                 selectedFile={csvFile}
-                onFileChange={setCsvFile}
+                onFileChange={handleFileSelected}
                 dropLabel={t("drag_drop_csv_to_upload")}
                 browseLabel={t("browse_file")}
                 onInvalidFile={handleInvalidFile}
               />
+              {validationErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertTitle>{t("csv_validation_issues")}</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc list-inside space-y-1 mt-2">
+                      {validationErrors.map((error, idx) => {
+                        let message = "";
+                        if (error.type === "missing_headers") {
+                          const columns = Array.isArray(error.data)
+                            ? error.data.join(", ")
+                            : error.data;
+                          message = `${t("csv_missing_headers")}: ${columns}`;
+                        } else if (error.type === "empty_rows") {
+                          message = `${t("csv_empty_values")}: ${error.data}`;
+                        } else if (error.type === "parse_error") {
+                          message = `${t("csv_parse_error")}: ${error.data}`;
+                        }
+
+                        return (
+                          <li key={idx}>{message}</li>
+                        );
+                      })}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
               <DialogFooter className="flex items-center justify-between">
                 <Button
                   variant="outline"
@@ -97,7 +191,11 @@ export default function ProductMappingsLayout() {
                   <DialogClose asChild>
                     <Button variant="outline">{t("cancel")}</Button>
                   </DialogClose>
-                  <Button variant="primary" disabled={!csvFile} onClick={uploadCsv}>
+                  <Button
+                    variant="primary"
+                    disabled={!csvFile || validationErrors.length > 0}
+                    onClick={uploadCsv}
+                  >
                     {t("upload")}
                   </Button>
                 </div>
