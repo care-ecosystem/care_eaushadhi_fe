@@ -160,8 +160,8 @@ export class SuperBatchError extends Error {
 }
 
 function extractResultsFromError(err: any): SuperBatchResult[] {
-  const body = err?.error ?? err;
-  const results = body?.results ?? err?.results;
+  const results =
+    err?.data?.results ?? err?.error?.results ?? err?.results;
   return Array.isArray(results) ? results : [];
 }
 

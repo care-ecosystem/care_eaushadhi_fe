@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { PlusIcon, UploadIcon, Settings2Icon, DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,15 +22,28 @@ import FileDropzone from "@/components/FileDropzone";
 import ProductMappings from "./ProductMappings";
 import { downloadProductMappingTemplate } from "@/lib/utils";
 import { validateCSV } from "@/utils/csvValidation";
-import type { FormattedError } from "@/utils/csvValidation";
+import type { FormattedError, ProductMappingCsvRow } from "@/utils/csvValidation";
+import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import {
+  buildProductMappingBatch,
+  buildProductMappingSearchBatch,
+  chunkProductMappingRows,
+  extractFailedRows,
+  splitRowsByExistingMapping,
+} from "@/apis/productMappingBatch";
+import type { FailedProductMappingRow } from "@/apis/productMappingBatch";
 
 export default function ProductMappingsLayout() {
   const { t } = useTranslation(I18NNAMESPACE);
+  const queryClient = useQueryClient();
+  const superBatch = useSuperBatchRequest();
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<ProductMappingCsvRow[]>([]);
   const [validationErrors, setValidationErrors] = useState<FormattedError[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const fileReaderRef = useRef<FileReader | null>(null);
   const selectionIdRef = useRef<number>(0);
 
@@ -43,6 +57,7 @@ export default function ProductMappingsLayout() {
 
     setCsvFile(file);
     setValidationErrors([]);
+    setParsedRows([]);
 
     if (!file) return;
 
@@ -88,7 +103,9 @@ export default function ProductMappingsLayout() {
 
           setValidationErrors(errors);
           setCsvFile(null);
+          setParsedRows([]);
         } else {
+          setParsedRows(validation.rows ?? []);
           toast.success(`Valid CSV with ${validation.rowCount} rows`);
         }
       } catch (error) {
@@ -103,17 +120,106 @@ export default function ProductMappingsLayout() {
           },
         ]);
         setCsvFile(null);
+        setParsedRows([]);
       }
     };
 
     reader.readAsText(file);
   };
 
-  const uploadCsv = () => {
-    // TODO: send csvFile to the bulk mapping upload API once available
-    setCsvFile(null);
-    setUploadOpen(false);
+  const uploadCsv = async () => {
+    if (!csvFile || parsedRows.length === 0 || isUploading) return;
+
+    setIsUploading(true);
     setValidationErrors([]);
+
+    try {
+      // Phase 1: search in batch for rows that already have a BULK_IMPORT
+      const searchChunks = chunkProductMappingRows(parsedRows);
+      const rowsToCreate: ProductMappingCsvRow[] = [];
+      const erroredSearchRows: FailedProductMappingRow[] = [];
+      let skippedCount = 0;
+
+      for (const chunk of searchChunks) {
+        const searchPayload = buildProductMappingSearchBatch(
+          chunk,
+          selectedFacilityId,
+        );
+        // A single row's search failing rolls the whole search sub-request
+        // back with a SuperBatchError, but `error.results` still carries
+        // every row's result (successes included) — reuse it either way.
+        const searchResults =
+          await superBatch.mutateAsync(searchPayload).catch((error) => {
+            if (error instanceof SuperBatchError) {
+              return error.results;
+            }
+            throw error;
+          });
+
+        const { existingRows, newRows, erroredRows } =
+          splitRowsByExistingMapping(chunk, searchResults);
+        skippedCount += existingRows.length;
+        rowsToCreate.push(...newRows);
+        erroredSearchRows.push(...erroredRows);
+      }
+
+      // Phase 2: create mappings only for the rows that still need one.
+      const createChunks = chunkProductMappingRows(rowsToCreate);
+      const failedRows: FailedProductMappingRow[] = [...erroredSearchRows];
+
+      for (const chunk of createChunks) {
+        const payload = buildProductMappingBatch(chunk, selectedFacilityId);
+        try {
+          await superBatch.mutateAsync(payload);
+        } catch (error) {
+          if (error instanceof SuperBatchError) {
+            failedRows.push(...extractFailedRows(chunk, error.results));
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      if (failedRows.length > 0) {
+        const rowMessages = failedRows.map(
+          (row) => `${t("row")} ${row.rowNum}: ${row.message}`,
+        );
+        setValidationErrors([
+          {
+            type: "upload_errors",
+            data: rowMessages,
+          },
+        ]);
+        toast.error(rowMessages.join(" | "));
+        // Rows within a chunk succeed/fail independently — a chunk with some
+        // failures may still have created other rows, so refresh either way.
+        queryClient.invalidateQueries({
+          queryKey: ["product-mappings", selectedFacilityId],
+        });
+        return;
+      }
+
+      toast.success(
+        skippedCount > 0
+          ? t("csv_upload_success_with_skipped", {
+              count: rowsToCreate.length,
+              skipped: skippedCount,
+            })
+          : t("csv_upload_success", { count: parsedRows.length }),
+      );
+      queryClient.invalidateQueries({
+        queryKey: ["product-mappings", selectedFacilityId],
+      });
+      setCsvFile(null);
+      setParsedRows([]);
+      setUploadOpen(false);
+      setValidationErrors([]);
+    } catch (error) {
+      toast.error((error as { message?: string })?.message ?? t("csv_upload_error"));
+      console.error("Failed to upload product mappings:", error);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleInvalidFile = (fileName: string) => {
@@ -145,6 +251,7 @@ export default function ProductMappingsLayout() {
             onOpenChange={(open) => {
               if (!open) {
                 setCsvFile(null);
+                setParsedRows([]);
                 setValidationErrors([]);
               }
               setUploadOpen(open);
@@ -187,6 +294,11 @@ export default function ProductMappingsLayout() {
                           message = `${t("csv_empty_values")}: ${error.data}`;
                         } else if (error.type === "parse_error") {
                           message = `${t("csv_parse_error")}: ${error.data}`;
+                        } else if (error.type === "upload_errors") {
+                          const rows = Array.isArray(error.data)
+                            ? error.data.join(", ")
+                            : error.data;
+                          message = `${t("csv_upload_row_errors")}: ${rows}`;
                         }
 
                         return (
@@ -208,14 +320,16 @@ export default function ProductMappingsLayout() {
                 </Button>
                 <div className="flex gap-2">
                   <DialogClose asChild>
-                    <Button variant="outline">{t("cancel")}</Button>
+                    <Button variant="outline" disabled={isUploading}>
+                      {t("cancel")}
+                    </Button>
                   </DialogClose>
                   <Button
                     variant="primary"
-                    disabled={!csvFile || validationErrors.length > 0}
+                    disabled={!csvFile || validationErrors.length > 0 || isUploading}
                     onClick={uploadCsv}
                   >
-                    {t("upload")}
+                    {isUploading ? t("uploading") : t("upload")}
                   </Button>
                 </div>
               </DialogFooter>

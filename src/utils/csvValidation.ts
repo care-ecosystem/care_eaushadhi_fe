@@ -5,8 +5,16 @@ export interface ErrorSummary {
 }
 
 export interface FormattedError {
-  type: "missing_headers" | "empty_rows" | "parse_error";
+  type: "missing_headers" | "empty_rows" | "parse_error" | "upload_errors";
   data?: string | string[] | number[];
+}
+
+export interface ProductMappingCsvRow {
+  rowNum: number;
+  drugId: string;
+  drugName: string;
+  pkName: string;
+  pkSlug: string;
 }
 
 const REQUIRED_HEADERS = [
@@ -52,10 +60,28 @@ function validateCSVRows(rows: string[][], headers: string[]): number[] {
   return emptyRows;
 }
 
+function toProductMappingRows(rows: string[][], headers: string[]): ProductMappingCsvRow[] {
+  const headerIndices = {
+    drugId: headers.indexOf("EAushadhi Drug ID"),
+    drugName: headers.indexOf("EAushadhi Drug Name"),
+    pkName: headers.indexOf("Product Knowledge Name"),
+    pkSlug: headers.indexOf("Product Knowledge Slug"),
+  };
+
+  return rows.map((row, idx) => ({
+    rowNum: idx + 2,
+    drugId: row[headerIndices.drugId]?.trim() || "",
+    drugName: row[headerIndices.drugName]?.trim() || "",
+    pkName: row[headerIndices.pkName]?.trim() || "",
+    pkSlug: row[headerIndices.pkSlug]?.trim() || "",
+  }));
+}
+
 export function validateCSV(csvText: string): {
   valid: boolean;
   errors: ErrorSummary;
   rowCount: number;
+  rows?: ProductMappingCsvRow[];
 } {
   const errors: ErrorSummary = {};
 
@@ -156,6 +182,7 @@ export function validateCSV(csvText: string): {
       valid: !hasErrors,
       errors,
       rowCount: rows.length,
+      rows: hasErrors ? undefined : toProductMappingRows(rows, headers),
     };
   } catch (error) {
     return {

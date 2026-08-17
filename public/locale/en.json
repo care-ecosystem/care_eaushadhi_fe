@@ -290,6 +290,12 @@
   "csv_missing_headers": "Missing required columns",
   "csv_empty_values": "Empty required values in rows",
   "csv_parse_error": "Failed to parse CSV",
+  "csv_upload_row_errors": "Some rows failed to import",
+  "csv_upload_success": "{{count}} mapping(s) imported successfully",
+  "csv_upload_success_with_skipped": "{{count}} mapping(s) imported successfully, {{skipped}} already mapped and skipped",
+  "csv_upload_error": "Failed to import product mappings",
+  "uploading": "Uploading...",
+  "row": "Row",
   "facility": "Facility",
   "select_facility": "Select a facility",
   "select_facility_to_start": "Select a facility to start managing product mappings."
