@@ -291,7 +291,7 @@ export default function ProductMappingsLayout() {
   ).length;
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-6">
+    <div className="container mx-auto max-w-8xl px-4 py-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">
           {t("product_mappings")}

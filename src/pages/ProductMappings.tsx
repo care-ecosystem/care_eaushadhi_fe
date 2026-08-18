@@ -333,22 +333,22 @@ const ProductMappings: FC<ProductMappingsProps> = ({
           <Table>
             <TableHeader className="bg-gray-50 border-b border-gray-200">
               <TableRow className="hover:bg-gray-50">
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-normal">
                   {t("eaushadhi_drug")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
                   {t("product_knowledge")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
                   {t("create_pk_field_category")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
                   {t("created_by")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
                   {t("created_date")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-normal">
                   {t("actions")}
                 </TableHead>
               </TableRow>
@@ -356,7 +356,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
             <TableBody className="divide-y divide-gray-100">
               {mappings.map((mapping) => (
                 <TableRow key={mapping.id} className="hover:bg-gray-50">
-                  <TableCell className="px-4 py-3">
+                  <TableCell className="px-4 py-3 whitespace-normal break-words">
                     <div>
                       <p className="font-medium text-gray-900">
                         {mapping.eaushadhi_drug_name}
@@ -366,7 +366,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900">
+                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
                     <div>
                       <p className="font-medium">
                         {mapping.product_knowledge?.name || "—"}
@@ -376,13 +376,13 @@ const ProductMappings: FC<ProductMappingsProps> = ({
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900">
+                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
                     {mapping.product_knowledge?.category?.title || "—"}
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900">
+                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
                     {mapping.created_by?.first_name} {mapping.created_by?.last_name}
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900">
+                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
                     {formatDateTime(mapping.created_date)}
                   </TableCell>
                   <TableCell className="px-4 py-3">
