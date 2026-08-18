@@ -60,6 +60,62 @@ function validateCSVRows(rows: string[][], headers: string[]): number[] {
   return emptyRows;
 }
 
+export interface DuplicateProductMappingCsvRow extends ProductMappingCsvRow {
+  reason: string;
+}
+
+export interface DuplicateRowSplit {
+  uniqueRows: ProductMappingCsvRow[];
+  duplicateRows: DuplicateProductMappingCsvRow[];
+}
+
+export const SKIPPED_DUPLICATE_ROW_MESSAGE = "Duplicate Row";
+
+export const SKIPPED_DUPLICATE_DRUG_ID_MESSAGE = "Duplicate Drug ID";
+
+export const SKIPPED_DUPLICATE_SLUG_MESSAGE =
+  "Duplicate Product Knowledge Slug in this CSV";
+
+
+export function splitDuplicateRows(
+  rows: ProductMappingCsvRow[],
+): DuplicateRowSplit {
+  const seenFullRows = new Set<string>();
+  const seenDrugIds = new Set<string>();
+  const seenSlugs = new Set<string>();
+  const uniqueRows: ProductMappingCsvRow[] = [];
+  const duplicateRows: DuplicateProductMappingCsvRow[] = [];
+
+  rows.forEach((row) => {
+    const drugIdKey = row.drugId.toLowerCase();
+    const slugKey = row.pkSlug.toLowerCase();
+    const fullRowKey = [row.drugId, row.drugName, row.pkName, row.pkSlug]
+      .map((value) => value.toLowerCase())
+      .join("|");
+
+    let reason: string | null = null;
+    if (seenFullRows.has(fullRowKey)) {
+      reason = SKIPPED_DUPLICATE_ROW_MESSAGE;
+    } else if (seenDrugIds.has(drugIdKey)) {
+      reason = SKIPPED_DUPLICATE_DRUG_ID_MESSAGE;
+    } else if (seenSlugs.has(slugKey)) {
+      reason = SKIPPED_DUPLICATE_SLUG_MESSAGE;
+    }
+
+    if (reason) {
+      duplicateRows.push({ ...row, reason });
+    } else {
+      uniqueRows.push(row);
+    }
+
+    seenFullRows.add(fullRowKey);
+    seenDrugIds.add(drugIdKey);
+    seenSlugs.add(slugKey);
+  });
+
+  return { uniqueRows, duplicateRows };
+}
+
 function toProductMappingRows(rows: string[][], headers: string[]): ProductMappingCsvRow[] {
   const headerIndices = {
     drugId: headers.indexOf("EAushadhi Drug ID"),
@@ -82,6 +138,7 @@ export function validateCSV(csvText: string): {
   errors: ErrorSummary;
   rowCount: number;
   rows?: ProductMappingCsvRow[];
+  duplicateRows?: DuplicateProductMappingCsvRow[];
 } {
   const errors: ErrorSummary = {};
 
@@ -178,11 +235,20 @@ export function validateCSV(csvText: string): {
     }
 
     const hasErrors = Object.keys(errors).length > 0;
+    if (hasErrors) {
+      return { valid: false, errors, rowCount: rows.length };
+    }
+
+    const { uniqueRows, duplicateRows } = splitDuplicateRows(
+      toProductMappingRows(rows, headers),
+    );
+
     return {
-      valid: !hasErrors,
+      valid: true,
       errors,
       rowCount: rows.length,
-      rows: hasErrors ? undefined : toProductMappingRows(rows, headers),
+      rows: uniqueRows,
+      duplicateRows,
     };
   } catch (error) {
     return {

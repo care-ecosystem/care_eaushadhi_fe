@@ -38,6 +38,30 @@ export function chunkProductMappingRows(
   return chunkArray(rows, PRODUCT_MAPPING_BATCH_SIZE);
 }
 
+export const VALIDATION_REQUEST_CONCURRENCY = 2;
+
+export async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runNext(): Promise<void> {
+    const index = nextIndex++;
+    if (index >= items.length) return;
+    results[index] = await worker(items[index], index);
+    return runNext();
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, runNext),
+  );
+
+  return results;
+}
+
 function toFullSlug(facilityId: string, slug: string): string {
   if (slug.startsWith("f-") || slug.startsWith("i-")) {
     return slug;
@@ -128,6 +152,13 @@ export interface ResolvedProductMappingRow {
 export interface ProductKnowledgeLookupSplit {
   resolvedRows: ResolvedProductMappingRow[];
   failedRows: FailedProductMappingRow[];
+  inactiveRows: FailedProductMappingRow[];
+}
+
+const ACTIVE_PRODUCT_KNOWLEDGE_STATUS = "active";
+
+export function buildInactiveProductKnowledgeMessage(status: string): string {
+  return `Product knowledge is not active (status: ${status}) and was skipped from the import`;
 }
 
 export function extractProductKnowledgeLookup(
@@ -140,11 +171,12 @@ export function extractProductKnowledgeLookup(
 
   const resolvedRows: ResolvedProductMappingRow[] = [];
   const failedRows: FailedProductMappingRow[] = [];
+  const inactiveRows: FailedProductMappingRow[] = [];
 
   rows.forEach((row, chainId) => {
     const result = byRef[`pk_${chainId}`];
-    const productKnowledgeId = (result?.data as { id?: string } | undefined)
-      ?.id;
+    const data = result?.data as { id?: string; status?: string } | undefined;
+    const productKnowledgeId = data?.id;
 
     if (!result || (result.status_code ?? 200) > 299 || !productKnowledgeId) {
       failedRows.push({
@@ -156,10 +188,18 @@ export function extractProductKnowledgeLookup(
       return;
     }
 
+    if (data?.status && data.status !== ACTIVE_PRODUCT_KNOWLEDGE_STATUS) {
+      inactiveRows.push({
+        ...row,
+        message: buildInactiveProductKnowledgeMessage(data.status),
+      });
+      return;
+    }
+
     resolvedRows.push({ row, productKnowledgeId });
   });
 
-  return { resolvedRows, failedRows };
+  return { resolvedRows, failedRows, inactiveRows };
 }
 
 export function buildProductMappingBatch(

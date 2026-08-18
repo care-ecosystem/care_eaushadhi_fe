@@ -1,7 +1,13 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { PlusIcon, UploadIcon, Settings2Icon, DownloadIcon } from "lucide-react";
+import {
+  PlusIcon,
+  UploadIcon,
+  Settings2Icon,
+  DownloadIcon,
+  Loader2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import FacilitySelector from "@/components/FacilitySelector";
@@ -22,7 +28,11 @@ import FileDropzone from "@/components/FileDropzone";
 import ProductMappings from "./ProductMappings";
 import { downloadProductMappingTemplate } from "@/lib/utils";
 import { validateCSV } from "@/utils/csvValidation";
-import type { FormattedError, ProductMappingCsvRow } from "@/utils/csvValidation";
+import type {
+  DuplicateProductMappingCsvRow,
+  FormattedError,
+  ProductMappingCsvRow,
+} from "@/utils/csvValidation";
 import { useBatchRequest, useSuperBatchRequest, SuperBatchError } from "@/apis/query";
 import {
   buildProductKnowledgeLookupBatch,
@@ -34,9 +44,11 @@ import {
   extractFailedRows,
   extractProductKnowledgeLookup,
   PRODUCT_MAPPING_BATCH_SIZE,
+  runWithConcurrency,
   SKIPPED_BATCH_ROLLBACK_MESSAGE,
   SKIPPED_EXISTING_MAPPING_MESSAGE,
   splitRowsByExistingMapping,
+  VALIDATION_REQUEST_CONCURRENCY,
 } from "@/apis/productMappingBatch";
 import type {
   FailedProductMappingRow,
@@ -54,11 +66,37 @@ export default function ProductMappingsLayout() {
   const [mappingOpen, setMappingOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ProductMappingCsvRow[]>([]);
+  const [duplicateRows, setDuplicateRows] = useState<
+    DuplicateProductMappingCsvRow[]
+  >([]);
   const [validationErrors, setValidationErrors] = useState<FormattedError[]>([]);
   const [reportRows, setReportRows] = useState<ProductMappingReportRow[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
+
+  const [isValidatingRows, setIsValidatingRows] = useState(false);
+  const [validationStage, setValidationStage] = useState<
+    "search" | "lookup" | null
+  >(null);
+  const [validationProgress, setValidationProgress] = useState({
+    done: 0,
+    total: 0,
+  });
+  const [existingMappingRows, setExistingMappingRows] = useState<
+    ProductMappingCsvRow[]
+  >([]);
+  const [resolvedRows, setResolvedRows] = useState<ResolvedProductMappingRow[]>(
+    [],
+  );
+  const [preUploadFailedRows, setPreUploadFailedRows] = useState<
+    FailedProductMappingRow[]
+  >([]);
+  const [inactiveProductKnowledgeRows, setInactiveProductKnowledgeRows] =
+    useState<FailedProductMappingRow[]>([]);
+
   const fileReaderRef = useRef<FileReader | null>(null);
   const selectionIdRef = useRef<number>(0);
+  const validationRunIdRef = useRef(0);
 
   const handleFileSelected = (file: File | null) => {
     if (fileReaderRef.current) {
@@ -71,7 +109,12 @@ export default function ProductMappingsLayout() {
     setCsvFile(file);
     setValidationErrors([]);
     setParsedRows([]);
+    setDuplicateRows([]);
     setReportRows([]);
+    setExistingMappingRows([]);
+    setResolvedRows([]);
+    setPreUploadFailedRows([]);
+    setInactiveProductKnowledgeRows([]);
 
     if (!file) return;
 
@@ -118,9 +161,10 @@ export default function ProductMappingsLayout() {
           setValidationErrors(errors);
           setCsvFile(null);
           setParsedRows([]);
+          setDuplicateRows([]);
         } else {
           setParsedRows(validation.rows ?? []);
-          toast.success(`Valid CSV with ${validation.rowCount} rows`);
+          setDuplicateRows(validation.duplicateRows ?? []);
         }
       } catch (error) {
         if (currentSelectionId !== selectionIdRef.current) {
@@ -141,73 +185,178 @@ export default function ProductMappingsLayout() {
     reader.readAsText(file);
   };
 
+  useEffect(() => {
+    if (parsedRows.length === 0 || !selectedFacilityId) {
+      validationRunIdRef.current += 1;
+      setIsValidatingRows(false);
+      setValidationStage(null);
+      setExistingMappingRows([]);
+      setResolvedRows([]);
+      setPreUploadFailedRows([]);
+      setInactiveProductKnowledgeRows([]);
+      return;
+    }
+
+    const runId = ++validationRunIdRef.current;
+    const rows = parsedRows;
+    const facilityId = selectedFacilityId;
+    const isStale = () => runId !== validationRunIdRef.current;
+
+    setIsValidatingRows(true);
+    setReportRows([]);
+    setExistingMappingRows([]);
+    setResolvedRows([]);
+    setPreUploadFailedRows([]);
+    setInactiveProductKnowledgeRows([]);
+
+    (async () => {
+      try {
+        setValidationStage("search");
+        setValidationProgress({ done: 0, total: rows.length });
+
+        const searchChunks = chunkProductMappingRows(rows);
+        const rowsToCreate: ProductMappingCsvRow[] = [];
+        const existingRows: ProductMappingCsvRow[] = [];
+        const erroredSearchRows: FailedProductMappingRow[] = [];
+        let searchDone = 0;
+
+        await runWithConcurrency(
+          searchChunks,
+          VALIDATION_REQUEST_CONCURRENCY,
+          async (chunk) => {
+            if (isStale()) return;
+
+            const searchPayload = buildProductMappingSearchBatch(
+              chunk,
+              facilityId,
+            );
+            const searchResults =
+              await batchRequest.mutateAsync(searchPayload).catch((error) => {
+                if (error instanceof SuperBatchError) {
+                  return error.results;
+                }
+                console.error("Existing-mapping search batch failed:", error);
+                return [];
+              });
+
+            if (isStale()) return;
+
+            const { existingRows: chunkExisting, newRows, erroredRows } =
+              splitRowsByExistingMapping(chunk, searchResults);
+            existingRows.push(...chunkExisting);
+            rowsToCreate.push(...newRows);
+            erroredSearchRows.push(...erroredRows);
+            searchDone += chunk.length;
+            setValidationProgress({ done: searchDone, total: rows.length });
+          },
+        );
+
+        if (isStale()) return;
+
+        setValidationStage("lookup");
+        setValidationProgress({ done: 0, total: rowsToCreate.length });
+
+        const lookupChunks = chunkProductMappingRows(rowsToCreate);
+        const resolved: ResolvedProductMappingRow[] = [];
+        const failed: FailedProductMappingRow[] = [...erroredSearchRows];
+        const inactive: FailedProductMappingRow[] = [];
+        let lookupDone = 0;
+
+        await runWithConcurrency(
+          lookupChunks,
+          VALIDATION_REQUEST_CONCURRENCY,
+          async (chunk) => {
+            if (isStale()) return;
+
+            const lookupPayload = buildProductKnowledgeLookupBatch(
+              chunk,
+              facilityId,
+            );
+            const lookupResults =
+              await batchRequest.mutateAsync(lookupPayload).catch((error) => {
+                if (error instanceof SuperBatchError) {
+                  return error.results;
+                }
+                console.error("Product knowledge lookup batch failed:", error);
+                return [];
+              });
+
+            if (isStale()) return;
+
+            const {
+              resolvedRows: chunkResolvedRows,
+              failedRows: chunkLookupFailedRows,
+              inactiveRows: chunkInactiveRows,
+            } = extractProductKnowledgeLookup(chunk, lookupResults);
+            resolved.push(...chunkResolvedRows);
+            failed.push(...chunkLookupFailedRows);
+            inactive.push(...chunkInactiveRows);
+            lookupDone += chunk.length;
+            setValidationProgress({ done: lookupDone, total: rowsToCreate.length });
+          },
+        );
+
+        if (isStale()) return;
+
+        setExistingMappingRows(existingRows);
+        setResolvedRows(resolved);
+        setPreUploadFailedRows(failed);
+        setInactiveProductKnowledgeRows(inactive);
+
+        if (resolved.length === 0) {
+          toast.error(
+            t("csv_validation_nothing_to_upload", {
+              skipped:
+                existingRows.length + inactive.length + duplicateRows.length,
+              failed: failed.length,
+            }),
+          );
+        } else {
+          toast.success(
+            t("csv_validation_complete_toast", {
+              ready: resolved.length,
+              total: rows.length,
+            }),
+          );
+        }
+      } catch (error) {
+        if (isStale()) return;
+        toast.error(
+          (error as { message?: string })?.message ??
+            t("csv_validation_failed"),
+        );
+        console.error("Failed to validate product mapping rows:", error);
+      } finally {
+        if (!isStale()) {
+          setIsValidatingRows(false);
+          setValidationStage(null);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedRows, selectedFacilityId]);
+
   const uploadCsv = async () => {
-    if (!csvFile || parsedRows.length === 0 || isUploading) return;
+    if (
+      !csvFile ||
+      isUploading ||
+      isValidatingRows ||
+      reportRows.length > 0 ||
+      resolvedRows.length === 0
+    )
+      return;
 
     setIsUploading(true);
     setValidationErrors([]);
+    setUploadProgress({ done: 0, total: resolvedRows.length });
 
     try {
-      // Phase 1: search in batch for rows that already have a BULK_IMPORT
-      // mapping — those are skipped by the super-batch rather than re-created.
-      const searchChunks = chunkProductMappingRows(parsedRows);
-      const rowsToCreate: ProductMappingCsvRow[] = [];
-      const skippedRows: ProductMappingCsvRow[] = [];
-      const erroredSearchRows: FailedProductMappingRow[] = [];
-
-      for (const chunk of searchChunks) {
-        const searchPayload = buildProductMappingSearchBatch(
-          chunk,
-          selectedFacilityId,
-        );
-        // A single row's search failing rolls the whole search sub-request
-        // back with a SuperBatchError, but `error.results` still carries
-        // every row's result (successes included) — reuse it either way.
-        const searchResults =
-          await batchRequest.mutateAsync(searchPayload).catch((error) => {
-            if (error instanceof SuperBatchError) {
-              return error.results;
-            }
-            throw error;
-          });
-
-        const { existingRows, newRows, erroredRows } =
-          splitRowsByExistingMapping(chunk, searchResults);
-        skippedRows.push(...existingRows);
-        rowsToCreate.push(...newRows);
-        erroredSearchRows.push(...erroredRows);
-      }
-
-      // Phase 2: resolve each remaining row's product_knowledge id. 
-      const lookupChunks = chunkProductMappingRows(rowsToCreate);
-      const resolvedRows: ResolvedProductMappingRow[] = [];
-      const failedRows: FailedProductMappingRow[] = [...erroredSearchRows];
-
-      for (const chunk of lookupChunks) {
-        const lookupPayload = buildProductKnowledgeLookupBatch(
-          chunk,
-          selectedFacilityId,
-        );
-        const lookupResults =
-          await batchRequest.mutateAsync(lookupPayload).catch((error) => {
-            if (error instanceof SuperBatchError) {
-              return error.results;
-            }
-            throw error;
-          });
-
-        const {
-          resolvedRows: chunkResolvedRows,
-          failedRows: chunkLookupFailedRows,
-        } = extractProductKnowledgeLookup(chunk, lookupResults);
-        resolvedRows.push(...chunkResolvedRows);
-        failedRows.push(...chunkLookupFailedRows);
-      }
-
-      // Phase 3: create mappings for the rows that resolved successfully.
+      // Phase 3: create mappings for the rows resolved by pre-validation.
       const createChunks = chunkArray(resolvedRows, PRODUCT_MAPPING_BATCH_SIZE);
       const successRows: ProductMappingCsvRow[] = [];
       const rolledBackRows: ProductMappingCsvRow[] = [];
+      const failedRows: FailedProductMappingRow[] = [...preUploadFailedRows];
+      let uploadDone = 0;
 
       for (const chunk of createChunks) {
         const payload = buildProductMappingBatch(chunk, selectedFacilityId);
@@ -223,24 +372,40 @@ export default function ProductMappingsLayout() {
           } else {
             throw error;
           }
+        } finally {
+          uploadDone += chunk.length;
+          setUploadProgress({ done: uploadDone, total: resolvedRows.length });
         }
       }
 
-      const skippedCount = skippedRows.length;
+      const skippedCount =
+        existingMappingRows.length +
+        inactiveProductKnowledgeRows.length +
+        duplicateRows.length;
       const report: ProductMappingReportRow[] = [
         ...successRows.map((row) => ({
           ...row,
           status: "SUCCESS" as const,
         })),
-        ...skippedRows.map((row) => ({
+        ...existingMappingRows.map((row) => ({
           ...row,
           status: "SKIPPED" as const,
           message: SKIPPED_EXISTING_MAPPING_MESSAGE,
+        })),
+        ...inactiveProductKnowledgeRows.map((row) => ({
+          ...row,
+          status: "SKIPPED" as const,
+          message: row.message,
         })),
         ...rolledBackRows.map((row) => ({
           ...row,
           status: "SKIPPED" as const,
           message: SKIPPED_BATCH_ROLLBACK_MESSAGE,
+        })),
+        ...duplicateRows.map(({ reason, ...row }) => ({
+          ...row,
+          status: "SKIPPED" as const,
+          message: reason,
         })),
         ...failedRows.map((row) => ({
           ...row,
@@ -315,8 +480,10 @@ export default function ProductMappingsLayout() {
               if (!open) {
                 setCsvFile(null);
                 setParsedRows([]);
+                setDuplicateRows([]);
                 setValidationErrors([]);
                 setReportRows([]);
+                setUploadProgress({ done: 0, total: 0 });
               }
               setUploadOpen(open);
             }}
@@ -342,6 +509,41 @@ export default function ProductMappingsLayout() {
                 browseLabel={t("browse_file")}
                 onInvalidFile={handleInvalidFile}
               />
+              {isValidatingRows && (
+                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  <Loader2Icon className="size-4 shrink-0 animate-spin" />
+                  <span>
+                    {validationStage === "search"
+                      ? t("csv_validating_existing", validationProgress)
+                      : t("csv_validating_product_knowledge", validationProgress)}
+                  </span>
+                </div>
+              )}
+              {!isValidatingRows &&
+                !isUploading &&
+                parsedRows.length > 0 &&
+                reportRows.length === 0 && (
+                  <Alert>
+                    <AlertTitle>{t("csv_pre_validation_ready")}</AlertTitle>
+                    <AlertDescription>
+                      <p className="text-sm">
+                        {t("csv_pre_validation_summary", {
+                          ready: resolvedRows.length,
+                          skipped: existingMappingRows.length,
+                          inactive: inactiveProductKnowledgeRows.length,
+                          duplicates: duplicateRows.length,
+                          failed: preUploadFailedRows.length,
+                        })}
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              {isUploading && (
+                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  <Loader2Icon className="size-4 shrink-0 animate-spin" />
+                  <span>{t("csv_uploading_progress", uploadProgress)}</span>
+                </div>
+              )}
               {validationErrors.length > 0 && (
                 <Alert variant="destructive">
                   <AlertTitle>{t("csv_validation_issues")}</AlertTitle>
@@ -417,8 +619,10 @@ export default function ProductMappingsLayout() {
                     disabled={
                       !csvFile ||
                       validationErrors.length > 0 ||
+                      isValidatingRows ||
                       isUploading ||
-                      reportRows.length > 0
+                      reportRows.length > 0 ||
+                      resolvedRows.length === 0
                     }
                     onClick={uploadCsv}
                   >

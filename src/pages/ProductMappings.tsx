@@ -79,7 +79,7 @@ const EMPTY_MAPPING: MappingForm = {
 };
 
 /** Matches the backend's default page size for this endpoint. */
-const PRODUCT_MAPPINGS_PAGE_SIZE = 14;
+const PRODUCT_MAPPINGS_PAGE_SIZE = 10;
 
 const ProductMappings: FC<ProductMappingsProps> = ({
   facilityId,
