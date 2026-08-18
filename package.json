@@ -50,6 +50,7 @@
     "@tanstack/react-virtual": "^3.14.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dayjs": "^1.11.21",
     "lucide-react": "^0.487.0",
     "radix-ui": "^1.4.3",
     "raviger": "^5.0.0-2",

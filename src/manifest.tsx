@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { InstituteMappingProvider } from "./contexts/InstituteMappingContext.tsx";
 import React from "react";
-import { TruckIcon } from "lucide-react";
+import { PillIcon } from "lucide-react";
 import en from "../public/locale/en.json";
 
 // Lazy load all page components for better code splitting and module federation
@@ -19,6 +19,9 @@ const EAusdhadhiInwardFetch = lazy(
 );
 const InstituteMappingAdmin = lazy(
   () => import("./pages/InstituteMappingAdmin.tsx"),
+);
+const ProductMappingsLayout = lazy(
+  () => import("./pages/ProductMappingsLayout.tsx"),
 );
 
 // Wrapper component for pages
@@ -72,6 +75,11 @@ const manifest = {
     "/admin/eaushadhi/institute-mappings": () => (
       <PageWrapper>
         <InstituteMappingAdmin />
+      </PageWrapper>
+    ),
+    "/admin/eaushadhi/product-mappings": () => (
+      <PageWrapper>
+        <ProductMappingsLayout />
       </PageWrapper>
     ),
     "/facility/:facilityId/locations/:locationId/eaushadhi/delivery/create": ({
@@ -149,9 +157,18 @@ const manifest = {
   navItems: [],
   adminNavItems: [
     {
-      url: "/admin/eaushadhi/institute-mappings",
-      name: "eAushadhi Institute Mapping",
-      icon: <TruckIcon />,
+      name: "eAushadhi",
+      icon: <PillIcon className="care-svg-icon__baseline" />,
+      children: [
+        {
+          name: "Institute Mappings",
+          url: "/admin/eaushadhi/institute-mappings",
+        },
+        {
+          name: "Product Mappings",
+          url: "/admin/eaushadhi/product-mappings",
+        },
+      ],
     },
   ],
 };
