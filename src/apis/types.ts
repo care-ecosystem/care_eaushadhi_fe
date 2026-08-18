@@ -52,3 +52,14 @@ export interface SuperBatchResult<T = unknown> {
 export interface SuperBatchResponse<T = unknown> {
   results: SuperBatchResult<T>[];
 }
+
+export interface BatchSubRequest {
+  reference_id: string;
+  url: string;
+  method: HttpMethod;
+  body?: Record<string, unknown>;
+}
+
+export interface BatchRequestBody {
+  requests: BatchSubRequest[];
+}

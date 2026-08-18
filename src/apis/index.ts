@@ -1,5 +1,6 @@
 import { HttpMethod } from "@/apis/types";
 import type {
+  BatchRequestBody,
   SuperBatchRequestBody,
   SuperBatchResponse,
   SuperBatchResult,
@@ -8,6 +9,7 @@ import type {
 import { request } from "@/apis/query";
 
 export const SUPER_BATCH_REQUEST_PATH = "/api/super_batch_request/";
+export const BATCH_REQUEST_PATH = "/api/v1/batch_requests/";
 
 export const apis = {
   /**
@@ -21,6 +23,9 @@ export const apis = {
       HttpMethod.POST,
       payload,
     ),
+
+  batchRequest: (payload: BatchRequestBody) =>
+    request<SuperBatchResponse>(BATCH_REQUEST_PATH, HttpMethod.POST, payload),
 };
 
 // ─── eAushadhi API ────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   FolderOpenIcon,
   PencilIcon,
 } from "lucide-react";
@@ -76,6 +78,9 @@ const EMPTY_MAPPING: MappingForm = {
   eaushadhi_drug_name: "",
 };
 
+/** Matches the backend's default page size for this endpoint. */
+const PRODUCT_MAPPINGS_PAGE_SIZE = 14;
+
 const ProductMappings: FC<ProductMappingsProps> = ({
   facilityId,
   mappingOpen,
@@ -87,26 +92,35 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   const [mappingForm, setMappingForm] = useState<MappingForm>(EMPTY_MAPPING);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [offset, setOffset] = useState(0);
 
   const { data: mappingsData } = useQuery({
-    queryKey: ["product-mappings", facilityId],
+    queryKey: ["product-mappings", facilityId, offset],
     queryFn: () =>
-      request<{ results: EaushadhiProductMapping[] }>(
+      request<{ count: number; results: EaushadhiProductMapping[] }>(
         `/api/care_eaushadhi/product-mappings/`,
         HttpMethod.GET,
         {
           facility_id: facilityId,
           mapping_type: "BULK_IMPORT",
+          limit: PRODUCT_MAPPINGS_PAGE_SIZE,
+          offset,
         },
       ),
     enabled: !!facilityId
   });
 
   const mappings = mappingsData?.results ?? [];
+  const totalCount = mappingsData?.count ?? 0;
+  const rangeStart = totalCount === 0 ? 0 : offset + 1;
+  const rangeEnd = Math.min(offset + PRODUCT_MAPPINGS_PAGE_SIZE, totalCount);
+  const canGoPrev = offset > 0;
+  const canGoNext = offset + PRODUCT_MAPPINGS_PAGE_SIZE < totalCount;
 
   useEffect(() => {
     setMappingForm(EMPTY_MAPPING);
     setEditingId(null);
+    setOffset(0);
   }, [facilityId]);
 
   const saveMapping = async () => {
@@ -385,6 +399,41 @@ const ProductMappings: FC<ProductMappingsProps> = ({
               ))}
             </TableBody>
           </Table>
+          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+            <p className="text-sm text-gray-500">
+              {t("pagination_showing", {
+                start: rangeStart,
+                end: rangeEnd,
+                total: totalCount,
+              })}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canGoPrev}
+                onClick={() =>
+                  setOffset((prev) =>
+                    Math.max(0, prev - PRODUCT_MAPPINGS_PAGE_SIZE),
+                  )
+                }
+              >
+                <ChevronLeftIcon className="mr-2 size-4" />
+                {t("previous")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canGoNext}
+                onClick={() =>
+                  setOffset((prev) => prev + PRODUCT_MAPPINGS_PAGE_SIZE)
+                }
+              >
+                {t("next")}
+                <ChevronRightIcon className="ml-2 size-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

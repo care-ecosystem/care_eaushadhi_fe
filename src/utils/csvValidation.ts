@@ -5,7 +5,7 @@ export interface ErrorSummary {
 }
 
 export interface FormattedError {
-  type: "missing_headers" | "empty_rows" | "parse_error" | "upload_errors";
+  type: "missing_headers" | "empty_rows" | "parse_error";
   data?: string | string[] | number[];
 }
 

@@ -2,6 +2,7 @@ import { useMutation, UseMutationOptions } from "@tanstack/react-query";
 
 import { apis } from "@/apis/index";
 import {
+  BatchRequestBody,
   HttpMethod,
   options,
   SuperBatchRequestBody,
@@ -165,25 +166,18 @@ function extractResultsFromError(err: any): SuperBatchResult[] {
   return Array.isArray(results) ? results : [];
 }
 
-export function useSuperBatchRequest(
+function useBatchMutation<TPayload>(
+  apiCall: (payload: TPayload) => Promise<SuperBatchResponse>,
   mutationOptions?: Omit<
-    UseMutationOptions<
-      SuperBatchResult[],
-      SuperBatchError,
-      SuperBatchRequestBody
-    >,
+    UseMutationOptions<SuperBatchResult[], SuperBatchError, TPayload>,
     "mutationFn"
   >,
 ) {
-  return useMutation<
-    SuperBatchResult[],
-    SuperBatchError,
-    SuperBatchRequestBody
-  >({
+  return useMutation<SuperBatchResult[], SuperBatchError, TPayload>({
     mutationFn: async (payload) => {
       let response: SuperBatchResponse;
       try {
-        response = await apis.superBatchRequest(payload);
+        response = await apiCall(payload);
       } catch (err: any) {
         const results = extractResultsFromError(err);
         if (results.length) {
@@ -205,4 +199,27 @@ export function useSuperBatchRequest(
     },
     ...mutationOptions,
   });
+}
+
+export function useSuperBatchRequest(
+  mutationOptions?: Omit<
+    UseMutationOptions<
+      SuperBatchResult[],
+      SuperBatchError,
+      SuperBatchRequestBody
+    >,
+    "mutationFn"
+  >,
+) {
+  return useBatchMutation(apis.superBatchRequest, mutationOptions);
+}
+
+
+export function useBatchRequest(
+  mutationOptions?: Omit<
+    UseMutationOptions<SuperBatchResult[], SuperBatchError, BatchRequestBody>,
+    "mutationFn"
+  >,
+) {
+  return useBatchMutation(apis.batchRequest, mutationOptions);
 }

@@ -23,26 +23,39 @@ import ProductMappings from "./ProductMappings";
 import { downloadProductMappingTemplate } from "@/lib/utils";
 import { validateCSV } from "@/utils/csvValidation";
 import type { FormattedError, ProductMappingCsvRow } from "@/utils/csvValidation";
-import { useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { useBatchRequest, useSuperBatchRequest, SuperBatchError } from "@/apis/query";
 import {
+  buildProductKnowledgeLookupBatch,
   buildProductMappingBatch,
   buildProductMappingSearchBatch,
+  chunkArray,
   chunkProductMappingRows,
+  downloadProductMappingReport,
   extractFailedRows,
+  extractProductKnowledgeLookup,
+  PRODUCT_MAPPING_BATCH_SIZE,
+  SKIPPED_BATCH_ROLLBACK_MESSAGE,
+  SKIPPED_EXISTING_MAPPING_MESSAGE,
   splitRowsByExistingMapping,
 } from "@/apis/productMappingBatch";
-import type { FailedProductMappingRow } from "@/apis/productMappingBatch";
+import type {
+  FailedProductMappingRow,
+  ProductMappingReportRow,
+  ResolvedProductMappingRow,
+} from "@/apis/productMappingBatch";
 
 export default function ProductMappingsLayout() {
   const { t } = useTranslation(I18NNAMESPACE);
   const queryClient = useQueryClient();
   const superBatch = useSuperBatchRequest();
+  const batchRequest = useBatchRequest();
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ProductMappingCsvRow[]>([]);
   const [validationErrors, setValidationErrors] = useState<FormattedError[]>([]);
+  const [reportRows, setReportRows] = useState<ProductMappingReportRow[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileReaderRef = useRef<FileReader | null>(null);
   const selectionIdRef = useRef<number>(0);
@@ -58,6 +71,7 @@ export default function ProductMappingsLayout() {
     setCsvFile(file);
     setValidationErrors([]);
     setParsedRows([]);
+    setReportRows([]);
 
     if (!file) return;
 
@@ -135,10 +149,11 @@ export default function ProductMappingsLayout() {
 
     try {
       // Phase 1: search in batch for rows that already have a BULK_IMPORT
+      // mapping — those are skipped by the super-batch rather than re-created.
       const searchChunks = chunkProductMappingRows(parsedRows);
       const rowsToCreate: ProductMappingCsvRow[] = [];
+      const skippedRows: ProductMappingCsvRow[] = [];
       const erroredSearchRows: FailedProductMappingRow[] = [];
-      let skippedCount = 0;
 
       for (const chunk of searchChunks) {
         const searchPayload = buildProductMappingSearchBatch(
@@ -149,7 +164,7 @@ export default function ProductMappingsLayout() {
         // back with a SuperBatchError, but `error.results` still carries
         // every row's result (successes included) — reuse it either way.
         const searchResults =
-          await superBatch.mutateAsync(searchPayload).catch((error) => {
+          await batchRequest.mutateAsync(searchPayload).catch((error) => {
             if (error instanceof SuperBatchError) {
               return error.results;
             }
@@ -158,62 +173,100 @@ export default function ProductMappingsLayout() {
 
         const { existingRows, newRows, erroredRows } =
           splitRowsByExistingMapping(chunk, searchResults);
-        skippedCount += existingRows.length;
+        skippedRows.push(...existingRows);
         rowsToCreate.push(...newRows);
         erroredSearchRows.push(...erroredRows);
       }
 
-      // Phase 2: create mappings only for the rows that still need one.
-      const createChunks = chunkProductMappingRows(rowsToCreate);
+      // Phase 2: resolve each remaining row's product_knowledge id. 
+      const lookupChunks = chunkProductMappingRows(rowsToCreate);
+      const resolvedRows: ResolvedProductMappingRow[] = [];
       const failedRows: FailedProductMappingRow[] = [...erroredSearchRows];
+
+      for (const chunk of lookupChunks) {
+        const lookupPayload = buildProductKnowledgeLookupBatch(
+          chunk,
+          selectedFacilityId,
+        );
+        const lookupResults =
+          await batchRequest.mutateAsync(lookupPayload).catch((error) => {
+            if (error instanceof SuperBatchError) {
+              return error.results;
+            }
+            throw error;
+          });
+
+        const {
+          resolvedRows: chunkResolvedRows,
+          failedRows: chunkLookupFailedRows,
+        } = extractProductKnowledgeLookup(chunk, lookupResults);
+        resolvedRows.push(...chunkResolvedRows);
+        failedRows.push(...chunkLookupFailedRows);
+      }
+
+      // Phase 3: create mappings for the rows that resolved successfully.
+      const createChunks = chunkArray(resolvedRows, PRODUCT_MAPPING_BATCH_SIZE);
+      const successRows: ProductMappingCsvRow[] = [];
+      const rolledBackRows: ProductMappingCsvRow[] = [];
 
       for (const chunk of createChunks) {
         const payload = buildProductMappingBatch(chunk, selectedFacilityId);
         try {
           await superBatch.mutateAsync(payload);
+          successRows.push(...chunk.map(({ row }) => row));
         } catch (error) {
           if (error instanceof SuperBatchError) {
-            failedRows.push(...extractFailedRows(chunk, error.results));
+            const { failedRows: chunkFailedRows, rolledBackRows: chunkRolledBackRows } =
+              extractFailedRows(chunk, error.results);
+            failedRows.push(...chunkFailedRows);
+            rolledBackRows.push(...chunkRolledBackRows);
           } else {
             throw error;
           }
         }
       }
 
+      const skippedCount = skippedRows.length;
+      const report: ProductMappingReportRow[] = [
+        ...successRows.map((row) => ({
+          ...row,
+          status: "SUCCESS" as const,
+        })),
+        ...skippedRows.map((row) => ({
+          ...row,
+          status: "SKIPPED" as const,
+          message: SKIPPED_EXISTING_MAPPING_MESSAGE,
+        })),
+        ...rolledBackRows.map((row) => ({
+          ...row,
+          status: "SKIPPED" as const,
+          message: SKIPPED_BATCH_ROLLBACK_MESSAGE,
+        })),
+        ...failedRows.map((row) => ({
+          ...row,
+          status: "FAILED" as const,
+          message: row.message,
+        })),
+      ].sort((a, b) => a.rowNum - b.rowNum);
+
+      setReportRows(report);
+
       if (failedRows.length > 0) {
-        const rowMessages = failedRows.map(
-          (row) => `${t("row")} ${row.rowNum}: ${row.message}`,
+        toast.error(t("csv_upload_row_errors"));
+      } else {
+        toast.success(
+          skippedCount > 0
+            ? t("csv_upload_success_with_skipped", {
+                count: successRows.length,
+                skipped: skippedCount,
+              })
+            : t("csv_upload_success", { count: successRows.length }),
         );
-        setValidationErrors([
-          {
-            type: "upload_errors",
-            data: rowMessages,
-          },
-        ]);
-        toast.error(rowMessages.join(" | "));
-        // Rows within a chunk succeed/fail independently — a chunk with some
-        // failures may still have created other rows, so refresh either way.
-        queryClient.invalidateQueries({
-          queryKey: ["product-mappings", selectedFacilityId],
-        });
-        return;
       }
 
-      toast.success(
-        skippedCount > 0
-          ? t("csv_upload_success_with_skipped", {
-              count: rowsToCreate.length,
-              skipped: skippedCount,
-            })
-          : t("csv_upload_success", { count: parsedRows.length }),
-      );
       queryClient.invalidateQueries({
         queryKey: ["product-mappings", selectedFacilityId],
       });
-      setCsvFile(null);
-      setParsedRows([]);
-      setUploadOpen(false);
-      setValidationErrors([]);
     } catch (error) {
       toast.error((error as { message?: string })?.message ?? t("csv_upload_error"));
       console.error("Failed to upload product mappings:", error);
@@ -226,6 +279,16 @@ export default function ProductMappingsLayout() {
     toast.error(t("invalid_file_format"));
     setValidationErrors([]);
   };
+
+  const reportFailedCount = reportRows.filter(
+    (row) => row.status === "FAILED",
+  ).length;
+  const reportSkippedCount = reportRows.filter(
+    (row) => row.status === "SKIPPED",
+  ).length;
+  const reportSuccessCount = reportRows.filter(
+    (row) => row.status === "SUCCESS",
+  ).length;
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6">
@@ -253,6 +316,7 @@ export default function ProductMappingsLayout() {
                 setCsvFile(null);
                 setParsedRows([]);
                 setValidationErrors([]);
+                setReportRows([]);
               }
               setUploadOpen(open);
             }}
@@ -294,11 +358,6 @@ export default function ProductMappingsLayout() {
                           message = `${t("csv_empty_values")}: ${error.data}`;
                         } else if (error.type === "parse_error") {
                           message = `${t("csv_parse_error")}: ${error.data}`;
-                        } else if (error.type === "upload_errors") {
-                          const rows = Array.isArray(error.data)
-                            ? error.data.join(", ")
-                            : error.data;
-                          message = `${t("csv_upload_row_errors")}: ${rows}`;
                         }
 
                         return (
@@ -306,6 +365,35 @@ export default function ProductMappingsLayout() {
                         );
                       })}
                     </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {reportRows.length > 0 && (
+                <Alert variant={reportFailedCount > 0 ? "destructive" : "default"}>
+                  <AlertTitle>
+                    {reportFailedCount > 0
+                      ? t("csv_upload_row_errors")
+                      : t("csv_upload_complete")}
+                  </AlertTitle>
+                  <AlertDescription>
+                    <div className="flex flex-col items-start gap-2 mt-2">
+                      <p className="text-sm">
+                        {t("csv_upload_report_summary", {
+                          success: reportSuccessCount,
+                          skipped: reportSkippedCount,
+                          failed: reportFailedCount,
+                        })}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-white"
+                        onClick={() => downloadProductMappingReport(reportRows)}
+                      >
+                        <DownloadIcon className="mr-2 size-4" />
+                        {t("download_report")}
+                      </Button>
+                    </div>
                   </AlertDescription>
                 </Alert>
               )}
@@ -321,12 +409,17 @@ export default function ProductMappingsLayout() {
                 <div className="flex gap-2">
                   <DialogClose asChild>
                     <Button variant="outline" disabled={isUploading}>
-                      {t("cancel")}
+                      {reportRows.length > 0 ? t("close") : t("cancel")}
                     </Button>
                   </DialogClose>
                   <Button
                     variant="primary"
-                    disabled={!csvFile || validationErrors.length > 0 || isUploading}
+                    disabled={
+                      !csvFile ||
+                      validationErrors.length > 0 ||
+                      isUploading ||
+                      reportRows.length > 0
+                    }
                     onClick={uploadCsv}
                   >
                     {isUploading ? t("uploading") : t("upload")}
