@@ -34,7 +34,12 @@ import type {
   FormattedError,
   ProductMappingCsvRow,
 } from "@/utils/csvValidation";
-import { request, useBatchRequest, useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import {
+  performBatchRequest,
+  request,
+  useSuperBatchRequest,
+  SuperBatchError,
+} from "@/apis/query";
 import { HttpMethod } from "@/apis/types";
 import {
   buildProductKnowledgeLookupBatch,
@@ -147,7 +152,6 @@ export default function ProductMappingsLayout() {
   ];
 
   const queryClient = useQueryClient();
-  const batchRequest = useBatchRequest();
   const superBatch = useSuperBatchRequest();
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("");
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -380,7 +384,7 @@ export default function ProductMappingsLayout() {
               facilityId,
             );
             const searchResults =
-              await batchRequest.mutateAsync(searchPayload).catch((error: unknown) => {
+              await performBatchRequest(searchPayload).catch((error: unknown) => {
                 if (error instanceof SuperBatchError) {
                   return error.results;
                 }
@@ -419,7 +423,7 @@ export default function ProductMappingsLayout() {
               facilityId,
             );
             const lookupResults =
-              await batchRequest.mutateAsync(lookupPayload).catch((error: unknown) => {
+              await performBatchRequest(lookupPayload).catch((error: unknown) => {
                 if (error instanceof SuperBatchError) {
                   return error.results;
                 }
@@ -446,7 +450,7 @@ export default function ProductMappingsLayout() {
                 true,
               );
               const instanceLookupResults =
-                await batchRequest.mutateAsync(instanceLookupPayload).catch(
+                await performBatchRequest(instanceLookupPayload).catch(
                   (error: unknown) => {
                     if (error instanceof SuperBatchError) {
                       return error.results;

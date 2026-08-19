@@ -219,22 +219,6 @@ export function useSuperBatchRequest(
   return useBatchMutation(apis.superBatchRequest, mutationOptions);
 }
 
-
-export function useBatchRequest(
-  mutationOptions?: Omit<
-    UseMutationOptions<SuperBatchResult[], SuperBatchError, BatchRequestBody>,
-    "mutationFn"
-  >,
-) {
-  return useBatchMutation(apis.batchRequest, mutationOptions);
-}
-
-export function performSuperBatchRequest(
-  payload: SuperBatchRequestBody,
-): Promise<SuperBatchResult[]> {
-  return performBatchMutation(apis.superBatchRequest, payload);
-}
-
 export function performBatchRequest(
   payload: BatchRequestBody,
 ): Promise<SuperBatchResult[]> {
