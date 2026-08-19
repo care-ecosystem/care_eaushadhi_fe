@@ -6,7 +6,7 @@ import type {
   SuperBatchResult,
   SuperBatchSubRequest,
 } from "@/apis/types";
-import { extractErrorMessage } from "@/apis/query";
+import { extractErrorMessage, request } from "@/apis/query";
 import { downloadCsv } from "@/lib/utils";
 import type { ProductMappingCsvRow } from "@/utils/csvValidation";
 
@@ -21,6 +21,15 @@ export type ProductMappingRowStatus = "SUCCESS" | "FAILED" | "SKIPPED";
 
 export interface ProductMappingReportRow extends ProductMappingCsvRow {
   status: ProductMappingRowStatus;
+  message?: string;
+}
+
+export type ProductMappingValidationStatus =
+  | "Validation Success"
+  | "Validation Failed";
+
+export interface ProductMappingValidationReportRow extends ProductMappingCsvRow {
+  status: ProductMappingValidationStatus;
   message?: string;
 }
 
@@ -320,4 +329,111 @@ export function downloadProductMappingReport(
   // Leading BOM so Excel detects UTF-8 and splits into columns instead of
   // dumping the whole line (including headers) into column A.
   downloadCsv("product_mapping_upload_report.csv", "\uFEFF" + lines.join("\n"));
+}
+
+export function downloadProductMappingValidationReport(
+  reportRows: ProductMappingValidationReportRow[],
+): void {
+  const lines = [
+    toCsvRow(REPORT_CSV_HEADERS),
+    ...reportRows.map((row) =>
+      toCsvRow([
+        row.drugId,
+        row.drugName,
+        row.pkName,
+        row.pkSlug,
+        row.status,
+        row.status === "Validation Failed" ? row.message ?? "" : "",
+      ]),
+    ),
+  ];
+
+  downloadCsv(
+    "product_mapping_validation_report.csv",
+    "\uFEFF" + lines.join("\n"),
+  );
+}
+
+export interface ProductMappingListItem {
+  eaushadhi_drug_id: string;
+  eaushadhi_drug_name: string;
+  product_knowledge?: {
+    name: string;
+    slug_config?: { slug_value: string };
+    category?: { title: string };
+  };
+  created_by?: { first_name: string; last_name: string };
+  created_date?: string;
+}
+
+interface ProductMappingListResponse {
+  count: number;
+  results: ProductMappingListItem[];
+}
+
+/** Page size used while paging through every existing mapping for a facility. */
+const ALL_MAPPINGS_FETCH_PAGE_SIZE = 25;
+
+
+export async function fetchAllProductMappings(
+  facilityId: string,
+): Promise<ProductMappingListItem[]> {
+  const mappings: ProductMappingListItem[] = [];
+  let offset = 0;
+
+  for (;;) {
+    const page = await request<ProductMappingListResponse>(
+      "/api/care_eaushadhi/product-mappings/",
+      HttpMethod.GET,
+      {
+        facility_id: facilityId,
+        mapping_type: "BULK_IMPORT",
+        limit: ALL_MAPPINGS_FETCH_PAGE_SIZE,
+        offset,
+      },
+    );
+
+    mappings.push(...(page.results ?? []));
+
+    if (page.results?.length !== ALL_MAPPINGS_FETCH_PAGE_SIZE || mappings.length >= page.count) {
+      break;
+    }
+
+    offset += ALL_MAPPINGS_FETCH_PAGE_SIZE;
+  }
+
+  return mappings;
+}
+
+const ALL_MAPPINGS_CSV_HEADERS = [
+  "EAushadhi Drug ID",
+  "EAushadhi Drug Name",
+  "Product Knowledge Name",
+  "Product Knowledge Slug",
+  "Category",
+  "Created By",
+  "Created Date",
+];
+
+export function downloadAllProductMappings(
+  mappings: ProductMappingListItem[],
+): void {
+  const lines = [
+    toCsvRow(ALL_MAPPINGS_CSV_HEADERS),
+    ...mappings.map((mapping) =>
+      toCsvRow([
+        mapping.eaushadhi_drug_id,
+        mapping.eaushadhi_drug_name,
+        mapping.product_knowledge?.name ?? "",
+        mapping.product_knowledge?.slug_config?.slug_value ?? "",
+        mapping.product_knowledge?.category?.title ?? "",
+        [mapping.created_by?.first_name, mapping.created_by?.last_name]
+          .filter(Boolean)
+          .join(" "),
+        mapping.created_date ?? "",
+      ]),
+    ),
+  ];
+
+  downloadCsv("product_mappings.csv", "\uFEFF" + lines.join("\n"));
 }

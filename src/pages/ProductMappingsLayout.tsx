@@ -40,9 +40,12 @@ import {
   buildProductMappingSearchBatch,
   chunkArray,
   chunkProductMappingRows,
+  downloadAllProductMappings,
   downloadProductMappingReport,
+  downloadProductMappingValidationReport,
   extractFailedRows,
   extractProductKnowledgeLookup,
+  fetchAllProductMappings,
   PRODUCT_MAPPING_BATCH_SIZE,
   runWithConcurrency,
   SKIPPED_BATCH_ROLLBACK_MESSAGE,
@@ -53,17 +56,86 @@ import {
 import type {
   FailedProductMappingRow,
   ProductMappingReportRow,
+  ProductMappingValidationReportRow,
   ResolvedProductMappingRow,
 } from "@/apis/productMappingBatch";
 
+type CsvValidationCounts = {
+  ready: number;
+  alreadyMapped: number;
+  inactive: number;
+  duplicates: number;
+  failed: number;
+};
+
+function getProgressPercent({ done, total }: { done: number; total: number }): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
 export default function ProductMappingsLayout() {
   const { t } = useTranslation(I18NNAMESPACE);
+
+  const getCsvValidationSummaryParts = (counts: CsvValidationCounts) =>
+    [
+      counts.ready > 0 && {
+        text: t("csv_summary_ready", { count: counts.ready }),
+        isFailure: false,
+      },
+      counts.alreadyMapped > 0 && {
+        text: t("csv_summary_already_mapped", { count: counts.alreadyMapped }),
+        isFailure: false,
+      },
+      counts.inactive > 0 && {
+        text: t("csv_summary_inactive", { count: counts.inactive }),
+        isFailure: false,
+      },
+      counts.duplicates > 0 && {
+        text: t("csv_summary_duplicate", { count: counts.duplicates }),
+        isFailure: false,
+      },
+      counts.failed > 0 && {
+        text: t("csv_summary_failed", { count: counts.failed }),
+        isFailure: true,
+      },
+    ].filter((part): part is { text: string; isFailure: boolean } =>
+      Boolean(part),
+    );
+
+  const buildCsvValidationSummary = (counts: CsvValidationCounts) =>
+    getCsvValidationSummaryParts(counts)
+      .map((part) => part.text)
+      .join(", ");
+
+  const getCsvUploadReportSummaryParts = (counts: {
+    success: number;
+    skipped: number;
+    failed: number;
+  }) =>
+    [
+      counts.success > 0 && {
+        text: t("csv_report_summary_success", { count: counts.success }),
+        isFailure: false,
+      },
+      counts.skipped > 0 && {
+        text: t("csv_report_summary_skipped", { count: counts.skipped }),
+        isFailure: false,
+      },
+      counts.failed > 0 && {
+        text: t("csv_report_summary_failed", { count: counts.failed }),
+        isFailure: true,
+      },
+    ].filter((part): part is { text: string; isFailure: boolean } =>
+      Boolean(part),
+    );
   const queryClient = useQueryClient();
-  const superBatch = useSuperBatchRequest();
   const batchRequest = useBatchRequest();
+  const superBatch = useSuperBatchRequest();
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("");
+  const [mappingsCount, setMappingsCount] = useState<number | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
+  const [isDownloadingMappings, setIsDownloadingMappings] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ProductMappingCsvRow[]>([]);
   const [duplicateRows, setDuplicateRows] = useState<
@@ -75,9 +147,6 @@ export default function ProductMappingsLayout() {
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
 
   const [isValidatingRows, setIsValidatingRows] = useState(false);
-  const [validationStage, setValidationStage] = useState<
-    "search" | "lookup" | null
-  >(null);
   const [validationProgress, setValidationProgress] = useState({
     done: 0,
     total: 0,
@@ -93,6 +162,51 @@ export default function ProductMappingsLayout() {
   >([]);
   const [inactiveProductKnowledgeRows, setInactiveProductKnowledgeRows] =
     useState<FailedProductMappingRow[]>([]);
+
+  const buildValidationReportRows = (): ProductMappingValidationReportRow[] =>
+    [
+      ...resolvedRows.map(({ row }) => ({
+        ...row,
+        status: "Validation Success" as const,
+      })),
+      ...existingMappingRows.map((row) => ({
+        ...row,
+        status: "Validation Failed" as const,
+        message: SKIPPED_EXISTING_MAPPING_MESSAGE,
+      })),
+      ...inactiveProductKnowledgeRows.map((row) => ({
+        ...row,
+        status: "Validation Failed" as const,
+        message: row.message,
+      })),
+      ...duplicateRows.map(({ reason, ...row }) => ({
+        ...row,
+        status: "Validation Failed" as const,
+        message: reason,
+      })),
+      ...preUploadFailedRows.map((row) => ({
+        ...row,
+        status: "Validation Failed" as const,
+        message: row.message,
+      })),
+    ].sort((a, b) => a.rowNum - b.rowNum);
+
+  const handleDownloadAllMappings = async () => {
+    if (!selectedFacilityId || isDownloadingMappings) return;
+
+    setIsDownloadingMappings(true);
+    try {
+      const mappings = await fetchAllProductMappings(selectedFacilityId);
+      downloadAllProductMappings(mappings);
+    } catch (error) {
+      toast.error(
+        (error as { message?: string })?.message ??
+          t("download_all_mappings_error"),
+      );
+    } finally {
+      setIsDownloadingMappings(false);
+    }
+  };
 
   const fileReaderRef = useRef<FileReader | null>(null);
   const selectionIdRef = useRef<number>(0);
@@ -189,7 +303,6 @@ export default function ProductMappingsLayout() {
     if (parsedRows.length === 0 || !selectedFacilityId) {
       validationRunIdRef.current += 1;
       setIsValidatingRows(false);
-      setValidationStage(null);
       setExistingMappingRows([]);
       setResolvedRows([]);
       setPreUploadFailedRows([]);
@@ -211,14 +324,14 @@ export default function ProductMappingsLayout() {
 
     (async () => {
       try {
-        setValidationStage("search");
-        setValidationProgress({ done: 0, total: rows.length });
+        const validationSteps = rows.length * 2;
+        let validationDone = 0;
+        setValidationProgress({ done: 0, total: validationSteps });
 
         const searchChunks = chunkProductMappingRows(rows);
         const rowsToCreate: ProductMappingCsvRow[] = [];
         const existingRows: ProductMappingCsvRow[] = [];
         const erroredSearchRows: FailedProductMappingRow[] = [];
-        let searchDone = 0;
 
         await runWithConcurrency(
           searchChunks,
@@ -231,7 +344,7 @@ export default function ProductMappingsLayout() {
               facilityId,
             );
             const searchResults =
-              await batchRequest.mutateAsync(searchPayload).catch((error) => {
+              await batchRequest.mutateAsync(searchPayload).catch((error: unknown) => {
                 if (error instanceof SuperBatchError) {
                   return error.results;
                 }
@@ -246,21 +359,18 @@ export default function ProductMappingsLayout() {
             existingRows.push(...chunkExisting);
             rowsToCreate.push(...newRows);
             erroredSearchRows.push(...erroredRows);
-            searchDone += chunk.length;
-            setValidationProgress({ done: searchDone, total: rows.length });
+            validationDone +=
+              newRows.length + (chunkExisting.length + erroredRows.length) * 2;
+            setValidationProgress({ done: validationDone, total: validationSteps });
           },
         );
 
         if (isStale()) return;
 
-        setValidationStage("lookup");
-        setValidationProgress({ done: 0, total: rowsToCreate.length });
-
         const lookupChunks = chunkProductMappingRows(rowsToCreate);
         const resolved: ResolvedProductMappingRow[] = [];
         const failed: FailedProductMappingRow[] = [...erroredSearchRows];
         const inactive: FailedProductMappingRow[] = [];
-        let lookupDone = 0;
 
         await runWithConcurrency(
           lookupChunks,
@@ -273,7 +383,7 @@ export default function ProductMappingsLayout() {
               facilityId,
             );
             const lookupResults =
-              await batchRequest.mutateAsync(lookupPayload).catch((error) => {
+              await batchRequest.mutateAsync(lookupPayload).catch((error: unknown) => {
                 if (error instanceof SuperBatchError) {
                   return error.results;
                 }
@@ -291,8 +401,8 @@ export default function ProductMappingsLayout() {
             resolved.push(...chunkResolvedRows);
             failed.push(...chunkLookupFailedRows);
             inactive.push(...chunkInactiveRows);
-            lookupDone += chunk.length;
-            setValidationProgress({ done: lookupDone, total: rowsToCreate.length });
+            validationDone += chunk.length;
+            setValidationProgress({ done: validationDone, total: validationSteps });
           },
         );
 
@@ -303,19 +413,30 @@ export default function ProductMappingsLayout() {
         setPreUploadFailedRows(failed);
         setInactiveProductKnowledgeRows(inactive);
 
+        const counts: CsvValidationCounts = {
+          ready: resolved.length,
+          alreadyMapped: existingRows.length,
+          inactive: inactive.length,
+          duplicates: duplicateRows.length,
+          failed: failed.length,
+        };
+
         if (resolved.length === 0) {
           toast.error(
             t("csv_validation_nothing_to_upload", {
-              skipped:
-                existingRows.length + inactive.length + duplicateRows.length,
-              failed: failed.length,
+              breakdown: buildCsvValidationSummary(counts),
             }),
           );
         } else {
           toast.success(
             t("csv_validation_complete_toast", {
               ready: resolved.length,
-              total: rows.length,
+              total:
+                counts.ready +
+                counts.alreadyMapped +
+                counts.inactive +
+                counts.duplicates +
+                counts.failed,
             }),
           );
         }
@@ -329,7 +450,6 @@ export default function ProductMappingsLayout() {
       } finally {
         if (!isStale()) {
           setIsValidatingRows(false);
-          setValidationStage(null);
         }
       }
     })();
@@ -440,7 +560,7 @@ export default function ProductMappingsLayout() {
     }
   };
 
-  const handleInvalidFile = (fileName: string) => {
+  const handleInvalidFile = (_fileName: string) => {
     toast.error(t("invalid_file_format"));
     setValidationErrors([]);
   };
@@ -470,10 +590,28 @@ export default function ProductMappingsLayout() {
         <div className="flex-1">
           <FacilitySelector
             value={selectedFacilityId}
-            onSelect={setSelectedFacilityId}
+            onSelect={(facilityId) => {
+              setSelectedFacilityId(facilityId);
+              setMappingsCount(null);
+            }}
           />
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
+          <Button
+            variant="outline"
+            disabled={
+              !selectedFacilityId ||
+              isDownloadingMappings ||
+              mappingsCount === null ||
+              mappingsCount === 0
+            }
+            onClick={handleDownloadAllMappings}
+          >
+            <DownloadIcon className="mr-2 size-4" />
+            {isDownloadingMappings
+              ? t("downloading_mappings")
+              : t("download_all_mappings")}
+          </Button>
           <Dialog
             open={uploadOpen}
             onOpenChange={(open) => {
@@ -510,13 +648,21 @@ export default function ProductMappingsLayout() {
                 onInvalidFile={handleInvalidFile}
               />
               {isValidatingRows && (
-                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                  <Loader2Icon className="size-4 shrink-0 animate-spin" />
-                  <span>
-                    {validationStage === "search"
-                      ? t("csv_validating_existing", validationProgress)
-                      : t("csv_validating_product_knowledge", validationProgress)}
-                  </span>
+                <div className="flex flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Loader2Icon className="size-4 shrink-0 animate-spin" />
+                    <span>
+                      {t("csv_validating_rows", {
+                        percent: getProgressPercent(validationProgress),
+                      })}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-primary-500 transition-[width]"
+                      style={{ width: `${getProgressPercent(validationProgress)}%` }}
+                    />
+                  </div>
                 </div>
               )}
               {!isValidatingRows &&
@@ -524,24 +670,85 @@ export default function ProductMappingsLayout() {
                 parsedRows.length > 0 &&
                 reportRows.length === 0 && (
                   <Alert>
-                    <AlertTitle>{t("csv_pre_validation_ready")}</AlertTitle>
+                    <AlertTitle>
+                      {existingMappingRows.length +
+                        inactiveProductKnowledgeRows.length +
+                        duplicateRows.length +
+                        preUploadFailedRows.length >
+                      0
+                        ? t("csv_pre_validation_issues")
+                        : t("csv_pre_validation_ready")}
+                    </AlertTitle>
                     <AlertDescription>
-                      <p className="text-sm">
-                        {t("csv_pre_validation_summary", {
-                          ready: resolvedRows.length,
-                          skipped: existingMappingRows.length,
-                          inactive: inactiveProductKnowledgeRows.length,
-                          duplicates: duplicateRows.length,
-                          failed: preUploadFailedRows.length,
-                        })}
-                      </p>
+                      <div className="flex flex-col items-start gap-2">
+                        <div className="flex flex-col gap-0.5">
+                          {getCsvValidationSummaryParts({
+                            ready: resolvedRows.length,
+                            alreadyMapped: existingMappingRows.length,
+                            inactive: inactiveProductKnowledgeRows.length,
+                            duplicates: duplicateRows.length,
+                            failed: preUploadFailedRows.length,
+                          }).map((part) => (
+                            <p
+                              key={part.text}
+                              className={
+                                part.isFailure
+                                  ? "text-sm text-red-600"
+                                  : "text-sm"
+                              }
+                            >
+                              {part.text}
+                            </p>
+                          ))}
+                        </div>
+                        {resolvedRows.length > 0 &&
+                          (existingMappingRows.length +
+                            inactiveProductKnowledgeRows.length +
+                            duplicateRows.length +
+                            preUploadFailedRows.length) >
+                            0 && (
+                            <p className="text-sm">
+                              {t("csv_pre_validation_partial_upload_notice", {
+                                count: resolvedRows.length,
+                              })}
+                            </p>
+                          )}
+                        <p className="text-sm text-gray-950 dark:text-gray-50">
+                          {t("csv_download_validation_report_label")}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="bg-white"
+                          onClick={() =>
+                            downloadProductMappingValidationReport(
+                              buildValidationReportRows(),
+                            )
+                          }
+                        >
+                          <DownloadIcon className="mr-2 size-4" />
+                          {t("download_validation_report")}
+                        </Button>
+                      </div>
                     </AlertDescription>
                   </Alert>
                 )}
               {isUploading && (
-                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                  <Loader2Icon className="size-4 shrink-0 animate-spin" />
-                  <span>{t("csv_uploading_progress", uploadProgress)}</span>
+                <div className="flex flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Loader2Icon className="size-4 shrink-0 animate-spin" />
+                    <span>
+                      {t("csv_uploading_progress", {
+                        percent: getProgressPercent(uploadProgress),
+                      })}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-primary-500 transition-[width]"
+                      style={{ width: `${getProgressPercent(uploadProgress)}%` }}
+                    />
+                  </div>
                 </div>
               )}
               {validationErrors.length > 0 && (
@@ -579,17 +786,26 @@ export default function ProductMappingsLayout() {
                   </AlertTitle>
                   <AlertDescription>
                     <div className="flex flex-col items-start gap-2 mt-2">
-                      <p className="text-sm">
-                        {t("csv_upload_report_summary", {
+                      <div className="flex flex-col gap-0.5">
+                        {getCsvUploadReportSummaryParts({
                           success: reportSuccessCount,
                           skipped: reportSkippedCount,
                           failed: reportFailedCount,
-                        })}
-                      </p>
+                        }).map((part) => (
+                          <p
+                            key={part.text}
+                            className={
+                              part.isFailure ? "text-sm text-red-600" : "text-sm"
+                            }
+                          >
+                            {part.text}
+                          </p>
+                        ))}
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="bg-white"
+                        className="bg-white text-gray-950 dark:text-gray-50"
                         onClick={() => downloadProductMappingReport(reportRows)}
                       >
                         <DownloadIcon className="mr-2 size-4" />
@@ -654,6 +870,7 @@ export default function ProductMappingsLayout() {
           facilityId={selectedFacilityId}
           mappingOpen={mappingOpen}
           onMappingOpenChange={setMappingOpen}
+          onMappingsCountChange={setMappingsCount}
         />
       )}
     </div>

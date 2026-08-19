@@ -62,6 +62,7 @@ type ProductMappingsProps = {
   facilityId: string;
   mappingOpen: boolean;
   onMappingOpenChange: (open: boolean) => void;
+  onMappingsCountChange: (count: number) => void;
 };
 
 type MappingForm = {
@@ -85,6 +86,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   facilityId,
   mappingOpen,
   onMappingOpenChange,
+  onMappingsCountChange,
 }) => {
   const { t } = useTranslation(I18NNAMESPACE);
   const queryClient = useQueryClient();
@@ -112,6 +114,13 @@ const ProductMappings: FC<ProductMappingsProps> = ({
 
   const mappings = mappingsData?.results ?? [];
   const totalCount = mappingsData?.count ?? 0;
+
+  useEffect(() => {
+    if (mappingsData) {
+      onMappingsCountChange(mappingsData.count);
+    }
+  }, [mappingsData, onMappingsCountChange]);
+
   const rangeStart = totalCount === 0 ? 0 : offset + 1;
   const rangeEnd = Math.min(offset + PRODUCT_MAPPINGS_PAGE_SIZE, totalCount);
   const canGoPrev = offset > 0;
@@ -330,25 +339,25 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg bg-white overflow-x-auto">
-          <Table>
+          <Table className="table-fixed `min-w-[720px]`">
             <TableHeader className="bg-gray-50 border-b border-gray-200">
               <TableRow className="hover:bg-gray-50">
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-normal">
-                  {t("eaushadhi_drug")}
-                </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[30%]">
                   {t("product_knowledge")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[12%]">
                   {t("create_pk_field_category")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[30%]">
+                  {t("eaushadhi_drug")}
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[10%]">
                   {t("created_by")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[10%]">
                   {t("created_date")}
                 </TableHead>
-                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-normal">
+                <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[10%]">
                   {t("actions")}
                 </TableHead>
               </TableRow>
@@ -356,33 +365,33 @@ const ProductMappings: FC<ProductMappingsProps> = ({
             <TableBody className="divide-y divide-gray-100">
               {mappings.map((mapping) => (
                 <TableRow key={mapping.id} className="hover:bg-gray-50">
-                  <TableCell className="px-4 py-3 whitespace-normal break-words">
+                  <TableCell className="px-4 py-3 text-gray-900">
                     <div>
-                      <p className="font-medium text-gray-900">
-                        {mapping.eaushadhi_drug_name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {t("drug_id_label")}: {mapping.eaushadhi_drug_id}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
-                    <div>
-                      <p className="font-medium">
+                      <p className="font-medium break-words">
                         {mapping.product_knowledge?.name || "—"}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 break-words">
                         {t("create_pk_field_slug")}: {mapping.product_knowledge?.slug_config?.slug_value || "—"}
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                  <TableCell className="px-4 py-3 text-gray-900 break-words">
                     {mapping.product_knowledge?.category?.title || "—"}
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                  <TableCell className="px-4 py-3">
+                    <div>
+                      <p className="font-medium text-gray-900 break-words">
+                        {mapping.eaushadhi_drug_name}
+                      </p>
+                      <p className="text-xs text-gray-500 break-words">
+                        {t("drug_id_label")}: {mapping.eaushadhi_drug_id}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-gray-900 break-words">
                     {mapping.created_by?.first_name} {mapping.created_by?.last_name}
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                  <TableCell className="px-4 py-3 text-gray-900 break-words">
                     {formatDateTime(mapping.created_date)}
                   </TableCell>
                   <TableCell className="px-4 py-3">
