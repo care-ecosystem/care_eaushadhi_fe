@@ -166,6 +166,33 @@ function extractResultsFromError(err: any): SuperBatchResult[] {
   return Array.isArray(results) ? results : [];
 }
 
+async function performBatchMutation<TPayload>(
+  apiCall: (payload: TPayload) => Promise<SuperBatchResponse>,
+  payload: TPayload,
+): Promise<SuperBatchResult[]> {
+  let response: SuperBatchResponse;
+  try {
+    response = await apiCall(payload);
+  } catch (err: any) {
+    const results = extractResultsFromError(err);
+    if (results.length) {
+      throw new SuperBatchError("Batch rolled back", {
+        results,
+        failed: results.filter((r) => r.status_code > 299),
+        status: err?.status,
+      });
+    }
+    throw err;
+  }
+
+  const results = response.results ?? [];
+  const failed = results.filter((r) => r.status_code > 299);
+  if (failed.length) {
+    throw new SuperBatchError("Batch rolled back", { results, failed });
+  }
+  return results;
+}
+
 function useBatchMutation<TPayload>(
   apiCall: (payload: TPayload) => Promise<SuperBatchResponse>,
   mutationOptions?: Omit<
@@ -174,29 +201,7 @@ function useBatchMutation<TPayload>(
   >,
 ) {
   return useMutation<SuperBatchResult[], SuperBatchError, TPayload>({
-    mutationFn: async (payload) => {
-      let response: SuperBatchResponse;
-      try {
-        response = await apiCall(payload);
-      } catch (err: any) {
-        const results = extractResultsFromError(err);
-        if (results.length) {
-          throw new SuperBatchError("Batch rolled back", {
-            results,
-            failed: results.filter((r) => r.status_code > 299),
-            status: err?.status,
-          });
-        }
-        throw err;
-      }
-
-      const results = response.results ?? [];
-      const failed = results.filter((r) => r.status_code > 299);
-      if (failed.length) {
-        throw new SuperBatchError("Batch rolled back", { results, failed });
-      }
-      return results;
-    },
+    mutationFn: (payload) => performBatchMutation(apiCall, payload),
     ...mutationOptions,
   });
 }
@@ -222,4 +227,16 @@ export function useBatchRequest(
   >,
 ) {
   return useBatchMutation(apis.batchRequest, mutationOptions);
+}
+
+export function performSuperBatchRequest(
+  payload: SuperBatchRequestBody,
+): Promise<SuperBatchResult[]> {
+  return performBatchMutation(apis.superBatchRequest, payload);
+}
+
+export function performBatchRequest(
+  payload: BatchRequestBody,
+): Promise<SuperBatchResult[]> {
+  return performBatchMutation(apis.batchRequest, payload);
 }

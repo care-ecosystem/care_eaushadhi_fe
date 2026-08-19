@@ -60,21 +60,19 @@ function validateCSVRows(rows: string[][], headers: string[]): number[] {
   return emptyRows;
 }
 
+export type DuplicateReasonCode =
+  | "DUPLICATE_ROW"
+  | "DUPLICATE_DRUG_ID"
+  | "DUPLICATE_SLUG";
+
 export interface DuplicateProductMappingCsvRow extends ProductMappingCsvRow {
-  reason: string;
+  reasonCode: DuplicateReasonCode;
 }
 
 export interface DuplicateRowSplit {
   uniqueRows: ProductMappingCsvRow[];
   duplicateRows: DuplicateProductMappingCsvRow[];
 }
-
-export const SKIPPED_DUPLICATE_ROW_MESSAGE = "Duplicate Row";
-
-export const SKIPPED_DUPLICATE_DRUG_ID_MESSAGE = "Duplicate Drug ID";
-
-export const SKIPPED_DUPLICATE_SLUG_MESSAGE =
-  "Duplicate Product Knowledge Slug in this CSV";
 
 
 function getFullRowKey(row: ProductMappingCsvRow): string {
@@ -119,22 +117,22 @@ export function splitDuplicateRows(
       isDrugIdDuplicated &&
       drugIdGroup.every((other) => getFullRowKey(other) === fullRowKey);
 
-    let reason: string | null = null;
+    let reasonCode: DuplicateReasonCode | null = null;
 
     if (isExactDuplicateGroup) {
       if (seenFullRowKeys.has(fullRowKey)) {
-        reason = SKIPPED_DUPLICATE_ROW_MESSAGE;
+        reasonCode = "DUPLICATE_ROW";
       } else {
         seenFullRowKeys.add(fullRowKey);
       }
     } else if (isDrugIdDuplicated) {
-      reason = SKIPPED_DUPLICATE_DRUG_ID_MESSAGE;
+      reasonCode = "DUPLICATE_DRUG_ID";
     } else if (slugGroup.length > 1) {
-      reason = SKIPPED_DUPLICATE_SLUG_MESSAGE;
+      reasonCode = "DUPLICATE_SLUG";
     }
 
-    if (reason) {
-      duplicateRows.push({ ...row, reason });
+    if (reasonCode) {
+      duplicateRows.push({ ...row, reasonCode });
     } else {
       uniqueRows.push(row);
     }

@@ -62,7 +62,6 @@ type ProductMappingsProps = {
   facilityId: string;
   mappingOpen: boolean;
   onMappingOpenChange: (open: boolean) => void;
-  onMappingsCountChange: (count: number) => void;
 };
 
 type MappingForm = {
@@ -86,7 +85,6 @@ const ProductMappings: FC<ProductMappingsProps> = ({
   facilityId,
   mappingOpen,
   onMappingOpenChange,
-  onMappingsCountChange,
 }) => {
   const { t } = useTranslation(I18NNAMESPACE);
   const queryClient = useQueryClient();
@@ -114,12 +112,6 @@ const ProductMappings: FC<ProductMappingsProps> = ({
 
   const mappings = mappingsData?.results ?? [];
   const totalCount = mappingsData?.count ?? 0;
-
-  useEffect(() => {
-    if (mappingsData) {
-      onMappingsCountChange(mappingsData.count);
-    }
-  }, [mappingsData, onMappingsCountChange]);
 
   const rangeStart = totalCount === 0 ? 0 : offset + 1;
   const rangeEnd = Math.min(offset + PRODUCT_MAPPINGS_PAGE_SIZE, totalCount);
@@ -339,7 +331,7 @@ const ProductMappings: FC<ProductMappingsProps> = ({
         </div>
       ) : (
         <div className="border border-gray-200 rounded-lg bg-white overflow-x-auto">
-          <Table className="table-fixed `min-w-[720px]`">
+          <Table className="table-fixed min-w-[720px]">
             <TableHeader className="bg-gray-50 border-b border-gray-200">
               <TableRow className="hover:bg-gray-50">
                 <TableHead className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 w-[30%]">

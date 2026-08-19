@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PlusIcon,
   UploadIcon,
@@ -30,10 +30,12 @@ import { downloadProductMappingTemplate } from "@/lib/utils";
 import { validateCSV } from "@/utils/csvValidation";
 import type {
   DuplicateProductMappingCsvRow,
+  DuplicateReasonCode,
   FormattedError,
   ProductMappingCsvRow,
 } from "@/utils/csvValidation";
-import { useBatchRequest, useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { request, useBatchRequest, useSuperBatchRequest, SuperBatchError } from "@/apis/query";
+import { HttpMethod } from "@/apis/types";
 import {
   buildProductKnowledgeLookupBatch,
   buildProductMappingBatch,
@@ -46,15 +48,15 @@ import {
   extractFailedRows,
   extractProductKnowledgeLookup,
   fetchAllProductMappings,
+  hasExplicitSlugScope,
   PRODUCT_MAPPING_BATCH_SIZE,
   runWithConcurrency,
-  SKIPPED_BATCH_ROLLBACK_MESSAGE,
-  SKIPPED_EXISTING_MAPPING_MESSAGE,
   splitRowsByExistingMapping,
   VALIDATION_REQUEST_CONCURRENCY,
 } from "@/apis/productMappingBatch";
 import type {
   FailedProductMappingRow,
+  InactiveProductKnowledgeRow,
   ProductMappingReportRow,
   ProductMappingValidationReportRow,
   ResolvedProductMappingRow,
@@ -66,6 +68,12 @@ type CsvValidationCounts = {
   inactive: number;
   duplicates: number;
   failed: number;
+};
+
+const DUPLICATE_REASON_TRANSLATION_KEYS: Record<DuplicateReasonCode, string> = {
+  DUPLICATE_ROW: "csv_duplicate_row",
+  DUPLICATE_DRUG_ID: "csv_duplicate_drug_id",
+  DUPLICATE_SLUG: "csv_duplicate_slug",
 };
 
 function getProgressPercent({ done, total }: { done: number; total: number }): number {
@@ -128,11 +136,20 @@ export default function ProductMappingsLayout() {
     ].filter((part): part is { text: string; isFailure: boolean } =>
       Boolean(part),
     );
+
+  const getReportHeaders = () => [
+    t("csv_report_header_drug_id"),
+    t("csv_report_header_drug_name"),
+    t("csv_report_header_pk_name"),
+    t("csv_report_header_pk_slug"),
+    t("csv_report_header_status"),
+    t("csv_report_header_failure_reason"),
+  ];
+
   const queryClient = useQueryClient();
   const batchRequest = useBatchRequest();
   const superBatch = useSuperBatchRequest();
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("");
-  const [mappingsCount, setMappingsCount] = useState<number | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [isDownloadingMappings, setIsDownloadingMappings] = useState(false);
@@ -161,35 +178,54 @@ export default function ProductMappingsLayout() {
     FailedProductMappingRow[]
   >([]);
   const [inactiveProductKnowledgeRows, setInactiveProductKnowledgeRows] =
-    useState<FailedProductMappingRow[]>([]);
+    useState<InactiveProductKnowledgeRow[]>([]);
 
   const buildValidationReportRows = (): ProductMappingValidationReportRow[] =>
     [
       ...resolvedRows.map(({ row }) => ({
         ...row,
-        status: "Validation Success" as const,
+        status: "SUCCESS" as const,
       })),
       ...existingMappingRows.map((row) => ({
         ...row,
-        status: "Validation Failed" as const,
-        message: SKIPPED_EXISTING_MAPPING_MESSAGE,
+        status: "FAILED" as const,
+        message: t("csv_skipped_existing_mapping"),
       })),
       ...inactiveProductKnowledgeRows.map((row) => ({
         ...row,
-        status: "Validation Failed" as const,
-        message: row.message,
+        status: "FAILED" as const,
+        message: t("csv_inactive_product_knowledge_message", {
+          status: row.productKnowledgeStatus,
+        }),
       })),
-      ...duplicateRows.map(({ reason, ...row }) => ({
+      ...duplicateRows.map(({ reasonCode, ...row }) => ({
         ...row,
-        status: "Validation Failed" as const,
-        message: reason,
+        status: "FAILED" as const,
+        message: t(DUPLICATE_REASON_TRANSLATION_KEYS[reasonCode]),
       })),
       ...preUploadFailedRows.map((row) => ({
         ...row,
-        status: "Validation Failed" as const,
+        status: "FAILED" as const,
         message: row.message,
       })),
     ].sort((a, b) => a.rowNum - b.rowNum);
+
+  const { data: mappingsCountData, isLoading: isMappingsCountLoading } = useQuery({
+    queryKey: ["product-mappings", selectedFacilityId, "count"],
+    queryFn: () =>
+      request<{ count: number }>(
+        `/api/care_eaushadhi/product-mappings/`,
+        HttpMethod.GET,
+        {
+          facility_id: selectedFacilityId,
+          mapping_type: "BULK_IMPORT",
+          limit: 1,
+          offset: 0,
+        },
+      ),
+    enabled: !!selectedFacilityId,
+  });
+  const mappingsCount = mappingsCountData?.count ?? null;
 
   const handleDownloadAllMappings = async () => {
     if (!selectedFacilityId || isDownloadingMappings) return;
@@ -370,7 +406,7 @@ export default function ProductMappingsLayout() {
         const lookupChunks = chunkProductMappingRows(rowsToCreate);
         const resolved: ResolvedProductMappingRow[] = [];
         const failed: FailedProductMappingRow[] = [...erroredSearchRows];
-        const inactive: FailedProductMappingRow[] = [];
+        const inactive: InactiveProductKnowledgeRow[] = [];
 
         await runWithConcurrency(
           lookupChunks,
@@ -393,11 +429,51 @@ export default function ProductMappingsLayout() {
 
             if (isStale()) return;
 
-            const {
-              resolvedRows: chunkResolvedRows,
-              failedRows: chunkLookupFailedRows,
-              inactiveRows: chunkInactiveRows,
-            } = extractProductKnowledgeLookup(chunk, lookupResults);
+            const facilitySplit = extractProductKnowledgeLookup(chunk, lookupResults);
+
+            let chunkResolvedRows = facilitySplit.resolvedRows;
+            let chunkInactiveRows = facilitySplit.inactiveRows;
+            let chunkLookupFailedRows = facilitySplit.failedRows;
+
+            const retryRows: ProductMappingCsvRow[] = facilitySplit.failedRows
+              .filter((row) => !hasExplicitSlugScope(row.pkSlug))
+              .map(({ message, ...row }) => row);
+
+            if (retryRows.length > 0) {
+              const instanceLookupPayload = buildProductKnowledgeLookupBatch(
+                retryRows,
+                facilityId,
+                true,
+              );
+              const instanceLookupResults =
+                await batchRequest.mutateAsync(instanceLookupPayload).catch(
+                  (error: unknown) => {
+                    if (error instanceof SuperBatchError) {
+                      return error.results;
+                    }
+                    console.error(
+                      "Product knowledge instance-scope retry failed:",
+                      error,
+                    );
+                    return [];
+                  },
+                );
+
+              if (isStale()) return;
+
+              const instanceSplit = extractProductKnowledgeLookup(
+                retryRows,
+                instanceLookupResults,
+              );
+              const definiteFailedRows = facilitySplit.failedRows.filter((row) =>
+                hasExplicitSlugScope(row.pkSlug),
+              );
+
+              chunkResolvedRows = [...chunkResolvedRows, ...instanceSplit.resolvedRows];
+              chunkInactiveRows = [...chunkInactiveRows, ...instanceSplit.inactiveRows];
+              chunkLookupFailedRows = [...definiteFailedRows, ...instanceSplit.failedRows];
+            }
+
             resolved.push(...chunkResolvedRows);
             failed.push(...chunkLookupFailedRows);
             inactive.push(...chunkInactiveRows);
@@ -510,22 +586,24 @@ export default function ProductMappingsLayout() {
         ...existingMappingRows.map((row) => ({
           ...row,
           status: "SKIPPED" as const,
-          message: SKIPPED_EXISTING_MAPPING_MESSAGE,
+          message: t("csv_skipped_existing_mapping"),
         })),
         ...inactiveProductKnowledgeRows.map((row) => ({
           ...row,
           status: "SKIPPED" as const,
-          message: row.message,
+          message: t("csv_inactive_product_knowledge_message", {
+            status: row.productKnowledgeStatus,
+          }),
         })),
         ...rolledBackRows.map((row) => ({
           ...row,
           status: "SKIPPED" as const,
-          message: SKIPPED_BATCH_ROLLBACK_MESSAGE,
+          message: t("csv_skipped_batch_rollback"),
         })),
-        ...duplicateRows.map(({ reason, ...row }) => ({
+        ...duplicateRows.map(({ reasonCode, ...row }) => ({
           ...row,
           status: "SKIPPED" as const,
-          message: reason,
+          message: t(DUPLICATE_REASON_TRANSLATION_KEYS[reasonCode]),
         })),
         ...failedRows.map((row) => ({
           ...row,
@@ -590,10 +668,7 @@ export default function ProductMappingsLayout() {
         <div className="flex-1">
           <FacilitySelector
             value={selectedFacilityId}
-            onSelect={(facilityId) => {
-              setSelectedFacilityId(facilityId);
-              setMappingsCount(null);
-            }}
+            onSelect={setSelectedFacilityId}
           />
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
@@ -602,8 +677,8 @@ export default function ProductMappingsLayout() {
             disabled={
               !selectedFacilityId ||
               isDownloadingMappings ||
-              mappingsCount === null ||
-              mappingsCount === 0
+              isMappingsCountLoading ||
+              !mappingsCount
             }
             onClick={handleDownloadAllMappings}
           >
@@ -723,6 +798,11 @@ export default function ProductMappingsLayout() {
                           onClick={() =>
                             downloadProductMappingValidationReport(
                               buildValidationReportRows(),
+                              {
+                                headers: getReportHeaders(),
+                                success: t("csv_validation_status_success"),
+                                failed: t("csv_validation_status_failed"),
+                              },
                             )
                           }
                         >
@@ -806,7 +886,14 @@ export default function ProductMappingsLayout() {
                         variant="outline"
                         size="sm"
                         className="bg-white text-gray-950 dark:text-gray-50"
-                        onClick={() => downloadProductMappingReport(reportRows)}
+                        onClick={() =>
+                          downloadProductMappingReport(reportRows, {
+                            headers: getReportHeaders(),
+                            success: t("csv_report_status_success"),
+                            failed: t("csv_report_status_failed"),
+                            skipped: t("csv_report_status_skipped"),
+                          })
+                        }
                       >
                         <DownloadIcon className="mr-2 size-4" />
                         {t("download_report")}
@@ -870,7 +957,6 @@ export default function ProductMappingsLayout() {
           facilityId={selectedFacilityId}
           mappingOpen={mappingOpen}
           onMappingOpenChange={setMappingOpen}
-          onMappingsCountChange={setMappingsCount}
         />
       )}
     </div>
