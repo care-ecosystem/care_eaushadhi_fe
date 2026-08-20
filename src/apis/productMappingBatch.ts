@@ -388,7 +388,7 @@ interface ProductMappingListResponse {
 }
 
 /** Page size used while paging through every existing mapping for a facility. */
-const ALL_MAPPINGS_FETCH_PAGE_SIZE = 25;
+const ALL_MAPPINGS_FETCH_PAGE_SIZE = 50;
 
 
 export async function fetchAllProductMappings(
@@ -426,9 +426,6 @@ const ALL_MAPPINGS_CSV_HEADERS = [
   "EAushadhi Drug Name",
   "Product Knowledge Name",
   "Product Knowledge Slug",
-  "Category",
-  "Created By",
-  "Created Date",
 ];
 
 export function downloadAllProductMappings(
@@ -442,11 +439,6 @@ export function downloadAllProductMappings(
         mapping.eaushadhi_drug_name,
         mapping.product_knowledge?.name ?? "",
         mapping.product_knowledge?.slug_config?.slug_value ?? "",
-        mapping.product_knowledge?.category?.title ?? "",
-        [mapping.created_by?.first_name, mapping.created_by?.last_name]
-          .filter(Boolean)
-          .join(" "),
-        mapping.created_date ?? "",
       ]),
     ),
   ];
