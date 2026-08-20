@@ -6,7 +6,7 @@ import type {
   SuperBatchResult,
   SuperBatchSubRequest,
 } from "@/apis/types";
-import { extractErrorMessage } from "@/apis/query";
+import { extractErrorMessage, request } from "@/apis/query";
 import { downloadCsv } from "@/lib/utils";
 import type { ProductMappingCsvRow } from "@/utils/csvValidation";
 
@@ -21,6 +21,13 @@ export type ProductMappingRowStatus = "SUCCESS" | "FAILED" | "SKIPPED";
 
 export interface ProductMappingReportRow extends ProductMappingCsvRow {
   status: ProductMappingRowStatus;
+  message?: string;
+}
+
+export type ProductMappingValidationStatus = "SUCCESS" | "FAILED";
+
+export interface ProductMappingValidationReportRow extends ProductMappingCsvRow {
+  status: ProductMappingValidationStatus;
   message?: string;
 }
 
@@ -62,11 +69,19 @@ export async function runWithConcurrency<T, R>(
   return results;
 }
 
-function toFullSlug(facilityId: string, slug: string): string {
-  if (slug.startsWith("f-") || slug.startsWith("i-")) {
+export function hasExplicitSlugScope(slug: string): boolean {
+  return slug.startsWith("f-") || slug.startsWith("i-");
+}
+
+function toFullSlug(
+  facilityId: string,
+  slug: string,
+  forceInstanceScope = false,
+): string {
+  if (hasExplicitSlugScope(slug)) {
     return slug;
   }
-  return `f-${facilityId}-${slug}`;
+  return forceInstanceScope ? `i-${slug}` : `f-${facilityId}-${slug}`;
 }
 
 export interface ExistingMappingSplit {
@@ -134,10 +149,11 @@ export function splitRowsByExistingMapping(
 export function buildProductKnowledgeLookupBatch(
   rows: ProductMappingCsvRow[],
   facilityId: string,
+  forceInstanceScope = false,
 ): BatchRequestBody {
   const requests: BatchSubRequest[] = rows.map((row, chainId) => ({
     reference_id: `pk_${chainId}`,
-    url: `/api/v1/product_knowledge/${toFullSlug(facilityId, row.pkSlug)}/?facility=${facilityId}`,
+    url: `/api/v1/product_knowledge/${toFullSlug(facilityId, row.pkSlug, forceInstanceScope)}/?facility=${facilityId}`,
     method: HttpMethod.GET,
   }));
 
@@ -149,17 +165,17 @@ export interface ResolvedProductMappingRow {
   productKnowledgeId: string;
 }
 
+export interface InactiveProductKnowledgeRow extends ProductMappingCsvRow {
+  productKnowledgeStatus: string;
+}
+
 export interface ProductKnowledgeLookupSplit {
   resolvedRows: ResolvedProductMappingRow[];
   failedRows: FailedProductMappingRow[];
-  inactiveRows: FailedProductMappingRow[];
+  inactiveRows: InactiveProductKnowledgeRow[];
 }
 
 const ACTIVE_PRODUCT_KNOWLEDGE_STATUS = "active";
-
-export function buildInactiveProductKnowledgeMessage(status: string): string {
-  return `Product knowledge is not active (status: ${status}) and was skipped from the import`;
-}
 
 export function extractProductKnowledgeLookup(
   rows: ProductMappingCsvRow[],
@@ -171,7 +187,7 @@ export function extractProductKnowledgeLookup(
 
   const resolvedRows: ResolvedProductMappingRow[] = [];
   const failedRows: FailedProductMappingRow[] = [];
-  const inactiveRows: FailedProductMappingRow[] = [];
+  const inactiveRows: InactiveProductKnowledgeRow[] = [];
 
   rows.forEach((row, chainId) => {
     const result = byRef[`pk_${chainId}`];
@@ -191,7 +207,7 @@ export function extractProductKnowledgeLookup(
     if (data?.status && data.status !== ACTIVE_PRODUCT_KNOWLEDGE_STATUS) {
       inactiveRows.push({
         ...row,
-        message: buildInactiveProductKnowledgeMessage(data.status),
+        productKnowledgeStatus: data.status,
       });
       return;
     }
@@ -275,21 +291,23 @@ export function extractFailedRows(
   return { failedRows, rolledBackRows };
 }
 
-const REPORT_CSV_HEADERS = [
-  "EAushadhi Drug ID",
-  "EAushadhi Drug Name",
-  "Product Knowledge Name",
-  "Product Knowledge Slug",
-  "Status",
-  "Failure Reason",
-];
+/** Localized column headers, in the same order for every report CSV. */
+export interface ProductMappingReportHeaders {
+  headers: string[];
+}
 
-/** Shown for rows skipped because the drug ID already has a BULK_IMPORT mapping. */
-export const SKIPPED_EXISTING_MAPPING_MESSAGE =
-  "Product mapping already exists for this EAushadhi Drug ID";
+export interface ProductMappingUploadReportLabels
+  extends ProductMappingReportHeaders {
+  success: string;
+  failed: string;
+  skipped: string;
+}
 
-/** Shown for rows skipped because another row in the same batch failed and rolled the batch back. */
-export const SKIPPED_BATCH_ROLLBACK_MESSAGE = "Because of issues in other rows";
+export interface ProductMappingValidationReportLabels
+  extends ProductMappingReportHeaders {
+  success: string;
+  failed: string;
+}
 
 function toCsvRow(values: string[]): string {
   return values.map((value) => `"${value.replace(/"/g, '""')}"`).join(",");
@@ -302,16 +320,22 @@ function toCsvRow(values: string[]): string {
  */
 export function downloadProductMappingReport(
   reportRows: ProductMappingReportRow[],
+  labels: ProductMappingUploadReportLabels,
 ): void {
+  const statusLabels: Record<ProductMappingRowStatus, string> = {
+    SUCCESS: labels.success,
+    FAILED: labels.failed,
+    SKIPPED: labels.skipped,
+  };
   const lines = [
-    toCsvRow(REPORT_CSV_HEADERS),
+    toCsvRow(labels.headers),
     ...reportRows.map((row) =>
       toCsvRow([
         row.drugId,
         row.drugName,
         row.pkName,
         row.pkSlug,
-        row.status,
+        statusLabels[row.status],
         row.message ?? "",
       ]),
     ),
@@ -320,4 +344,104 @@ export function downloadProductMappingReport(
   // Leading BOM so Excel detects UTF-8 and splits into columns instead of
   // dumping the whole line (including headers) into column A.
   downloadCsv("product_mapping_upload_report.csv", "\uFEFF" + lines.join("\n"));
+}
+
+export function downloadProductMappingValidationReport(
+  reportRows: ProductMappingValidationReportRow[],
+  labels: ProductMappingValidationReportLabels,
+): void {
+  const lines = [
+    toCsvRow(labels.headers),
+    ...reportRows.map((row) =>
+      toCsvRow([
+        row.drugId,
+        row.drugName,
+        row.pkName,
+        row.pkSlug,
+        row.status === "FAILED" ? labels.failed : labels.success,
+        row.status === "FAILED" ? row.message ?? "" : "",
+      ]),
+    ),
+  ];
+
+  downloadCsv(
+    "product_mapping_validation_report.csv",
+    "\uFEFF" + lines.join("\n"),
+  );
+}
+
+export interface ProductMappingListItem {
+  eaushadhi_drug_id: string;
+  eaushadhi_drug_name: string;
+  product_knowledge?: {
+    name: string;
+    slug_config?: { slug_value: string };
+    category?: { title: string };
+  };
+  created_by?: { first_name: string; last_name: string };
+  created_date?: string;
+}
+
+interface ProductMappingListResponse {
+  count: number;
+  results: ProductMappingListItem[];
+}
+
+/** Page size used while paging through every existing mapping for a facility. */
+const ALL_MAPPINGS_FETCH_PAGE_SIZE = 50;
+
+
+export async function fetchAllProductMappings(
+  facilityId: string,
+): Promise<ProductMappingListItem[]> {
+  const mappings: ProductMappingListItem[] = [];
+  let offset = 0;
+
+  for (;;) {
+    const page = await request<ProductMappingListResponse>(
+      "/api/care_eaushadhi/product-mappings/",
+      HttpMethod.GET,
+      {
+        facility_id: facilityId,
+        mapping_type: "BULK_IMPORT",
+        limit: ALL_MAPPINGS_FETCH_PAGE_SIZE,
+        offset,
+      },
+    );
+
+    mappings.push(...(page.results ?? []));
+
+    if (page.results?.length !== ALL_MAPPINGS_FETCH_PAGE_SIZE || mappings.length >= page.count) {
+      break;
+    }
+
+    offset += ALL_MAPPINGS_FETCH_PAGE_SIZE;
+  }
+
+  return mappings;
+}
+
+const ALL_MAPPINGS_CSV_HEADERS = [
+  "EAushadhi Drug ID",
+  "EAushadhi Drug Name",
+  "Product Knowledge Name",
+  "Product Knowledge Slug",
+];
+
+export function downloadAllProductMappings(
+  mappings: ProductMappingListItem[],
+): void {
+  const lines = [
+    toCsvRow(ALL_MAPPINGS_CSV_HEADERS),
+    ...mappings.map((mapping) =>
+      toCsvRow([
+        mapping.eaushadhi_drug_id,
+        mapping.eaushadhi_drug_name,
+        mapping.product_knowledge?.name ?? "",
+        mapping.product_knowledge?.slug_config?.slug_value ?? "",
+      ]),
+    ),
+  ];
+
+  downloadCsv("product_mappings.csv", "\uFEFF" + lines.join("\n"));
 }

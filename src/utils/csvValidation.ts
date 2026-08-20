@@ -60,8 +60,13 @@ function validateCSVRows(rows: string[][], headers: string[]): number[] {
   return emptyRows;
 }
 
+export type DuplicateReasonCode =
+  | "DUPLICATE_ROW"
+  | "DUPLICATE_DRUG_ID"
+  | "DUPLICATE_SLUG";
+
 export interface DuplicateProductMappingCsvRow extends ProductMappingCsvRow {
-  reason: string;
+  reasonCode: DuplicateReasonCode;
 }
 
 export interface DuplicateRowSplit {
@@ -69,48 +74,68 @@ export interface DuplicateRowSplit {
   duplicateRows: DuplicateProductMappingCsvRow[];
 }
 
-export const SKIPPED_DUPLICATE_ROW_MESSAGE = "Duplicate Row";
 
-export const SKIPPED_DUPLICATE_DRUG_ID_MESSAGE = "Duplicate Drug ID";
-
-export const SKIPPED_DUPLICATE_SLUG_MESSAGE =
-  "Duplicate Product Knowledge Slug in this CSV";
-
+function getFullRowKey(row: ProductMappingCsvRow): string {
+  return [row.drugId, row.drugName, row.pkName, row.pkSlug]
+    .map((value) => value.toLowerCase())
+    .join("|");
+}
 
 export function splitDuplicateRows(
   rows: ProductMappingCsvRow[],
 ): DuplicateRowSplit {
-  const seenFullRows = new Set<string>();
-  const seenDrugIds = new Set<string>();
-  const seenSlugs = new Set<string>();
-  const uniqueRows: ProductMappingCsvRow[] = [];
-  const duplicateRows: DuplicateProductMappingCsvRow[] = [];
+  const drugIdGroups = new Map<string, ProductMappingCsvRow[]>();
+  const slugGroups = new Map<string, ProductMappingCsvRow[]>();
 
   rows.forEach((row) => {
     const drugIdKey = row.drugId.toLowerCase();
     const slugKey = row.pkSlug.toLowerCase();
-    const fullRowKey = [row.drugId, row.drugName, row.pkName, row.pkSlug]
-      .map((value) => value.toLowerCase())
-      .join("|");
 
-    let reason: string | null = null;
-    if (seenFullRows.has(fullRowKey)) {
-      reason = SKIPPED_DUPLICATE_ROW_MESSAGE;
-    } else if (seenDrugIds.has(drugIdKey)) {
-      reason = SKIPPED_DUPLICATE_DRUG_ID_MESSAGE;
-    } else if (seenSlugs.has(slugKey)) {
-      reason = SKIPPED_DUPLICATE_SLUG_MESSAGE;
+    if (!drugIdGroups.has(drugIdKey)) drugIdGroups.set(drugIdKey, []);
+    drugIdGroups.get(drugIdKey)!.push(row);
+
+    if (!slugGroups.has(slugKey)) slugGroups.set(slugKey, []);
+    slugGroups.get(slugKey)!.push(row);
+  });
+
+  const uniqueRows: ProductMappingCsvRow[] = [];
+  const duplicateRows: DuplicateProductMappingCsvRow[] = [];
+  const seenFullRowKeys = new Set<string>();
+
+  rows.forEach((row) => {
+    const drugIdKey = row.drugId.toLowerCase();
+    const slugKey = row.pkSlug.toLowerCase();
+    const fullRowKey = getFullRowKey(row);
+
+    const drugIdGroup = drugIdGroups.get(drugIdKey)!;
+    const slugGroup = slugGroups.get(slugKey)!;
+
+    const isDrugIdDuplicated = drugIdGroup.length > 1;
+    // Every row sharing this drug ID is an exact duplicate of this one -
+    // treat as a "completely duplicate row" group instead of a drug-ID clash.
+    const isExactDuplicateGroup =
+      isDrugIdDuplicated &&
+      drugIdGroup.every((other) => getFullRowKey(other) === fullRowKey);
+
+    let reasonCode: DuplicateReasonCode | null = null;
+
+    if (isExactDuplicateGroup) {
+      if (seenFullRowKeys.has(fullRowKey)) {
+        reasonCode = "DUPLICATE_ROW";
+      } else {
+        seenFullRowKeys.add(fullRowKey);
+      }
+    } else if (isDrugIdDuplicated) {
+      reasonCode = "DUPLICATE_DRUG_ID";
+    } else if (slugGroup.length > 1) {
+      reasonCode = "DUPLICATE_SLUG";
     }
 
-    if (reason) {
-      duplicateRows.push({ ...row, reason });
+    if (reasonCode) {
+      duplicateRows.push({ ...row, reasonCode });
     } else {
       uniqueRows.push(row);
     }
-
-    seenFullRows.add(fullRowKey);
-    seenDrugIds.add(drugIdKey);
-    seenSlugs.add(slugKey);
   });
 
   return { uniqueRows, duplicateRows };
