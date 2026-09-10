@@ -3,6 +3,7 @@ import { InstituteMappingProvider } from "./contexts/InstituteMappingContext.tsx
 import React from "react";
 import { PillIcon } from "lucide-react";
 import en from "../public/locale/en.json";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 
 // Lazy load all page components for better code splitting and module federation
 const EAusdhadhiDeliveryCreate = lazy(
@@ -27,19 +28,21 @@ const ProductMappingsLayout = lazy(
 // Wrapper component for pages
 function PageWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense
-      fallback={
-        <div className="w-full px-6 py-6 max-w-5xl mx-auto">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-gray-200 rounded w-1/3" />
-            <div className="h-4 bg-gray-200 rounded w-1/2" />
-            <div className="h-4 bg-gray-200 rounded w-3/4" />
+    <ErrorBoundary>
+      <Suspense
+        fallback={
+          <div className="w-full px-6 py-6 max-w-5xl mx-auto">
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 bg-gray-200 rounded w-1/3" />
+              <div className="h-4 bg-gray-200 rounded w-1/2" />
+              <div className="h-4 bg-gray-200 rounded w-3/4" />
+            </div>
           </div>
-        </div>
-      }
-    >
-      {children}
-    </Suspense>
+        }
+      >
+        {children}
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -60,13 +63,27 @@ function FacilityPageWrapper({
   );
 }
 
+// Lazy load the pluggable component
+const DeliveryOrderActionsComponent = lazy(
+  () => import("./components/pluggables/eAusdhadhiTriggerButton"),
+);
+
+// Wrapper for pluggable components
+function PluggableWrapper(props: any) {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<div className="animate-pulse h-10 w-32 bg-gray-200 rounded" />}>
+        <DeliveryOrderActionsComponent {...props} />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
 const manifest = {
   plugin: "care_eaushadhi",
   extends: [],
   components: {
-    DeliveryOrderActions: lazy(
-      () => import("./components/pluggables/eAusdhadhiTriggerButton"),
-    ),
+    DeliveryOrderActions: PluggableWrapper,
   },
   i18n: {
     en,
